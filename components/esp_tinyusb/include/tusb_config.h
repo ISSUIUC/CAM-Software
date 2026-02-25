@@ -160,6 +160,14 @@ extern "C" {
 #define CFG_TUD_MIDI_RX_BUFSIZE     64
 #define CFG_TUD_MIDI_TX_BUFSIZE     64
 
+
+// Video class (UVC)
+#define CFG_TUD_VIDEO                       1
+#define CFG_TUD_VIDEO_STREAMING             1
+#define CFG_TUD_VIDEO_STREAMING_BULK        1
+#define CFG_TUD_VIDEO_STREAMING_EP_BUFSIZE  512
+
+
 // Vendor FIFO size of TX and RX
 #define CFG_TUD_VENDOR_RX_BUFSIZE (TUD_OPT_HIGH_SPEED ? 512 : 64)
 #define CFG_TUD_VENDOR_TX_BUFSIZE (TUD_OPT_HIGH_SPEED ? 512 : 64)

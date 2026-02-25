@@ -1,0 +1,37 @@
+# EAGLE-specific sdkconfig
+# NOTE: This is the ONLY sdkconfig.defaults for EAGLE env (not merged with base sdkconfig.defaults)
+
+# Arduino framework
+CONFIG_AUTOSTART_ARDUINO=y
+CONFIG_FREERTOS_HZ=1000
+
+# Do NOT auto-start Arduino USB CDC - we handle USB ourselves for UVC
+CONFIG_ARDUINO_USB_CDC_ON_BOOT=0
+# Use OTG mode (not USB-JTAG)
+CONFIG_ARDUINO_USB_MODE=0
+
+# Disable USB Serial/JTAG since we're using USB OTG for UVC
+# CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG is not set
+
+# TinyUSB enabled for UVC, all other classes DISABLED
+CONFIG_TINYUSB=y
+CONFIG_TINYUSB_ENABLED=y
+# CONFIG_TINYUSB_CDC_ENABLED is not set
+CONFIG_TINYUSB_CDC_COUNT=0
+# CONFIG_TINYUSB_MSC_ENABLED is not set
+CONFIG_TINYUSB_HID_COUNT=0
+CONFIG_TINYUSB_MIDI_COUNT=0
+CONFIG_TINYUSB_VENDOR_COUNT=0
+# CONFIG_TINYUSB_DFU_MODE_DFU is not set
+# CONFIG_TINYUSB_DFU_MODE_DFU_RUNTIME is not set
+# CONFIG_TINYUSB_BTH_ENABLED is not set
+# CONFIG_TINYUSB_NET_MODE_ECM_RNDIS is not set
+# CONFIG_TINYUSB_NET_MODE_NCM is not set
+
+# DMA mode for USB (required for High-Speed on ESP32-P4)
+CONFIG_TINYUSB_MODE_DMA=y
+
+# Enable PSRAM
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_200M=y

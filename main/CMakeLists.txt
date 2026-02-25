@@ -4,5 +4,5 @@
 FILE(GLOB_RECURSE app_sources ${CMAKE_SOURCE_DIR}/main/*.cpp)
 
 idf_component_register(SRCS ${app_sources}
-                        REQUIRES arduino esp_tinyusb esp_video
+                        REQUIRES arduino esp_tinyusb esp_video usb
                         INCLUDE_DIRS ".")
