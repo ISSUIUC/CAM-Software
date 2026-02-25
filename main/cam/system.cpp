@@ -110,6 +110,61 @@ static void poll_thread(CAMSystems* arg) {
     }
 }
 
+static void video_thread(CAMSystems* arg) {
+    const int EVEN_FIELD_BYTE_OFFSET = 0;
+    while (true) {
+
+        // Field A
+        esp_video_buffer_element *elem_a = esp_video_recv_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, portMAX_DELAY);
+        if (!elem_a)
+        {
+            while (1)
+            {
+            };
+        }
+        bool a_odd = !arg->tvp.tvp.read_field_sequence_status();
+
+        // Field B
+        esp_video_buffer_element *elem_b = esp_video_recv_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, portMAX_DELAY);
+        if (!elem_b)
+        {
+            while (1)
+            {
+            };
+        }
+
+        bool b_odd = !arg->tvp.tvp.read_field_sequence_status();
+
+        arg->JPEG.merge_fields(a_odd, elem_a, elem_b);
+
+        esp_video_queue_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, elem_a);
+        esp_video_queue_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, elem_b);
+
+        arg->JPEG.clean_cache_and_memory();
+
+        esp_err_t enc_ret = arg->JPEG.encode();
+
+        if (enc_ret != ESP_OK)
+        {
+            arg->serial->print("JPEG encode failed: 0x");
+            arg->serial->println(enc_ret, HEX);
+        }
+        else
+        {
+            arg->serial->print("JPEG compressed size: ");
+            arg->serial->println(arg->JPEG.jpg_encoded_size);
+
+            arg->serial->print("*FRAME ");
+            arg->serial->println(arg->JPEG.jpg_encoded_size);
+
+            //move to new file once radio is added
+            on_frame_ready(arg->JPEG.jpg_encoded_size, arg->JPEG.jpg_encoder_output_buf);
+            arg->serial->println("**DONE");
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
 /* Begin all system data */
 [[noreturn]] void sys_begin() {
 
@@ -141,8 +196,40 @@ static void poll_thread(CAMSystems* arg) {
         while (1) {}
     }
 
+    //tvp5151 tvp(TVP5151_PDN, TVP5151_RESET, TVP5151_ADDR, &Wire);
+
+    sys.video = DVP_init();
+
+    pinMode(CAM1_ON_OFF, OUTPUT);
+    digitalWrite(CAM1_ON_OFF, LOW);
+    digitalWrite(CAM1_ON_OFF, HIGH);
+    digitalWrite(LED_RED, HIGH);
+
+    sys.serial->println("cam on, waiting for video to stabilize");
+    delay(10000);
+
+   
+    sys.tvp.init();
+
+    start_dvp_cature(sys.video);
+
+    sys.JPEG.init();
+
+    // From the old code -- seems like we discard some frames. I don't exactly know the logic behind it, but removing
+    // this code corrupts video data. strange!
+    for (int i = 0; i < 5; i++)
+    {
+        esp_video_buffer_element *discard = esp_video_recv_element(sys.video, V4L2_BUF_TYPE_VIDEO_CAPTURE, portMAX_DELAY);
+        if (discard)
+        {
+            sys.serial->printf("Discarded frame %d (%lu bytes)\n", i, (unsigned long)discard->valid_size);
+            esp_video_queue_element(sys.video, V4L2_BUF_TYPE_VIDEO_CAPTURE, discard);
+        }
+    }
+
     xTaskCreatePinnedToCore((TaskFunction_t) cmd_thread, "cmdq", THREAD_STACK_SIZE_DEFAULT, &sys, 7, nullptr, 0);
     xTaskCreatePinnedToCore((TaskFunction_t) poll_thread, "poll", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, 0);
+    xTaskCreatePinnedToCore((TaskFunction_t) video_thread, "video", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, 0);
 
     while (true) {
         vTaskDelay(pdMS_TO_TICKS(1000));

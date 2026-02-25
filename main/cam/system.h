@@ -7,6 +7,16 @@
 #include "USB.h"
 #include "USBCDC.h"
 
+#include "DVP.h"
+#include "tvpcontroller.h"
+#include "JPEG.h"
+
+
+#include "esp_cache.h"
+#include "esp_video_init.h"
+#include "../components/esp_video/private_include/esp_video.h"
+#include "../components/esp_video/private_include/esp_video_device_internal.h"
+
 // System file for CAM
 // This file must expose `sys_begin()`, which will create all freeRTOS threads needed for the board.
 
@@ -18,4 +28,6 @@ struct CAMSystems {
     Cameras cameras;
     B2BHandler b2b;
     USBCDC* serial;
+    esp_video* video;
+    jpeg_encoder JPEG;
 };
