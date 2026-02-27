@@ -13,7 +13,46 @@ USBCDC USBSerial;
 
 bool bl_stat = false;
 
-uint32_t bytes_received;
+uint8_t *frame_buffer = nullptr;
+
+// Must match CAM side
+static const uint8_t FRAME_MAGIC[8] = {0xCA, 0x3E, 0xBE, 0xEF, 0x57, 0xA1, 0xD0, 0x92};
+
+enum RxState { WAITING_FOR_HEADER, RECEIVING_DATA };
+RxState rx_state = WAITING_FOR_HEADER;
+uint32_t jpeg_size = 0;
+uint32_t bytes_received = 0;
+
+void chunk_output(EAGLESystems* arg, uint8_t* buf, size_t len) {
+    // CODE BELOW IS FOR JPEG SERIAL OUTPUT!
+    uint32_t off = 0;
+    uint8_t tmp[512];
+
+    while (off < len)
+    {
+        uint32_t chunk = len - off;
+
+        if (chunk > 512)
+            chunk = 512;
+
+        // idk why, but writing directly from spiram works for the first couple chunks, then the data gets
+        // offset or shifted, making the rest of the image super grainy / makes the colors wrong.
+        // To fix this we'll move the frame frmo spiram to program memory in 512 byte chunks before sending them.
+        memcpy(tmp, buf + off, chunk);
+
+        size_t wrote = arg->serial->write(tmp, chunk);
+        arg->serial->flush();
+
+        if (wrote > 0)
+        {
+            off += wrote;
+        }
+        else
+        {
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+    }
+};
 
 static void receive_thread(EAGLESystems* arg) {
     si4463_t* handle = arg->radio.getHandle();
@@ -22,29 +61,44 @@ static void receive_thread(EAGLESystems* arg) {
     while(true) {
         uint8_t rxBytes = SI4463_GetRxFifoReceivedBytesFast(handle);
 
+        if(rxBytes == 0) { continue; }
+
         if (SI4463_ReadRxFifoFast(handle, rxBuffer, rxBytes) == SI4463_OK) {
 
+            rxBytes = 64;
 
-            constexpr uint32_t frame_size = FRAME_HEIGHT * FRAME_WIDTH * 2;
+            if (rx_state == WAITING_FOR_HEADER) {
+                // Check for magic header
+                if (rxBytes >= 12 && memcmp(rxBuffer, FRAME_MAGIC, 8) == 0) {
+                    memcpy(&jpeg_size, &rxBuffer[8], sizeof(uint32_t));
+                    bytes_received = 0;
 
-            if(bytes_received + rxBytes < frame_size) {
-                memcpy(frame_buffer + bytes_received, rxBuffer, rxBytes);
+                    if (jpeg_size > 0 && jpeg_size <= FRAME_SIZE_BYTES) {
+                        rx_state = RECEIVING_DATA;
+                    }
+                }
             } else {
-                memcpy(frame_buffer + bytes_received, rxBuffer, (frame_size - bytes_received));
-                bytes_received = 0;
-                tud_video_n_frame_xfer(0, 0, (void *)frame_buffer, FRAME_SIZE_BYTES);
-                bl_stat = !bl_stat;
-                digitalWrite(LED_BLUE, bl_stat);
+                // Accumulate JPEG data
+                uint32_t remaining = jpeg_size - bytes_received;
+                uint32_t to_copy = (rxBytes < remaining) ? rxBytes : remaining;
+                memcpy(frame_buffer + bytes_received, rxBuffer, to_copy);
+                bytes_received += to_copy;
 
+                if (bytes_received >= jpeg_size) {
+                    #ifdef USE_USB_DEBUG
+                    arg->serial->print("*FRAME ");
+                    arg->serial->println(jpeg_size);
+                    chunk_output(arg, frame_buffer, jpeg_size);
+                    arg->serial->println("**DONE");
+                    #endif
+
+                    bl_stat = !bl_stat;
+                    digitalWrite(LED_BLUE, bl_stat);
+
+                    rx_state = WAITING_FOR_HEADER;
+                }
             }
-
-            
-            
-            #ifdef USE_USB_DEBUG
-            arg->serial->print("RX "); arg->serial->print(rxBytes); arg->serial->print(": "); arg->serial->println((char*)rxBuffer);
-            #endif
         }
-
     }
 }
 
@@ -103,6 +157,8 @@ static void receive_thread(EAGLESystems* arg) {
 
     // }
 
+    frame_buffer = (uint8_t *)heap_caps_malloc(FRAME_SIZE_BYTES, MALLOC_CAP_SPIRAM);
+
     // Init radio
     CAMRadioStatus radio_status = sys.radio.init(SPI);
     if(radio_status != CAMRadioStatus::CAMRADIO_OK) {
@@ -125,9 +181,9 @@ static void receive_thread(EAGLESystems* arg) {
     digitalWrite(LED_GREEN, HIGH);
     while(true) {
         delay(1000);
-        #ifdef USE_USB_DEBUG
-        sys.serial->println("Running...");
-        #endif
+        // #ifdef USE_USB_DEBUG
+        // sys.serial->println("Running...");
+        // #endif
     }
 }
 

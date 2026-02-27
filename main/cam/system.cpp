@@ -119,22 +119,32 @@ static void poll_thread(CAMSystems* arg) {
 
 bool light_on_frame = false;
 
+// Frame protocol magic: signals start of a new JPEG frame
+// Header packet layout (64 useful bytes):
+//   [0..7]   magic
+//   [8..11]  JPEG size (little-endian uint32_t)
+//   [12..63] zeros
+static const uint8_t FRAME_MAGIC[8] = {0xCA, 0x3E, 0xBE, 0xEF, 0x57, 0xA1, 0xD0, 0x92};
+
 void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems* arg)
 {
-
     light_on_frame = !light_on_frame;
     digitalWrite(LED_GREEN, light_on_frame);
 
-    // Radio output
     const uint8_t PACKET_SIZE = 120;
+    const uint8_t GOOD_PL = 64;
+
+    // Send header packet with magic + JPEG size
+    uint8_t header[PACKET_SIZE] = {0};
+    memcpy(header, FRAME_MAGIC, 8);
+    memcpy(header + 8, &len, sizeof(uint32_t));
+    arg->radio.sendFast(header, PACKET_SIZE);
+
+    // Send JPEG data
     uint32_t total_sent = 0;
-
     while(total_sent < len) {
-        // arg->serial->print("SEND "); arg->serial->print(total_sent);
         CAMRadioStatus txStatus = arg->radio.sendFast(buf + total_sent, PACKET_SIZE);
-        // arg->serial->print("  OK");
-
-        total_sent += PACKET_SIZE;
+        total_sent += GOOD_PL;
     }
     
     
