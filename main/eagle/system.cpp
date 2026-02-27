@@ -13,7 +13,7 @@ USBCDC USBSerial;
 
 bool bl_stat = false;
 
-
+uint32_t bytes_received;
 
 static void receive_thread(EAGLESystems* arg) {
     si4463_t* handle = arg->radio.getHandle();
@@ -23,8 +23,23 @@ static void receive_thread(EAGLESystems* arg) {
         uint8_t rxBytes = SI4463_GetRxFifoReceivedBytesFast(handle);
 
         if (SI4463_ReadRxFifoFast(handle, rxBuffer, rxBytes) == SI4463_OK) {
-            // bl_stat = !bl_stat;
-            // digitalWrite(LED_BLUE, bl_stat);
+
+
+            constexpr uint32_t frame_size = FRAME_HEIGHT * FRAME_WIDTH * 2;
+
+            if(bytes_received + rxBytes < frame_size) {
+                memcpy(frame_buffer + bytes_received, rxBuffer, rxBytes);
+            } else {
+                memcpy(frame_buffer + bytes_received, rxBuffer, (frame_size - bytes_received));
+                bytes_received = 0;
+                tud_video_n_frame_xfer(0, 0, (void *)frame_buffer, FRAME_SIZE_BYTES);
+                bl_stat = !bl_stat;
+                digitalWrite(LED_BLUE, bl_stat);
+
+            }
+
+            
+            
             #ifdef USE_USB_DEBUG
             arg->serial->print("RX "); arg->serial->print(rxBytes); arg->serial->print(": "); arg->serial->println((char*)rxBuffer);
             #endif
