@@ -111,7 +111,8 @@ esp_video* DVP_init()
     return video;
 }
 
-void start_dvp_cature(esp_video *video)
+
+void start_dvp_capture(esp_video *video)
 {
     esp_err_t err = esp_video_start_capture(video, V4L2_BUF_TYPE_VIDEO_CAPTURE);
     if (err != ESP_OK)

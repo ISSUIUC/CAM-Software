@@ -5,25 +5,30 @@
 
 //https://support.runcam.com/hc/en-us/articles/360014537794-RunCam-Device-Protocol
 
-int Cameras::init() {
-    cam1->begin(115200, SERIAL_8N1, CAM1_RX, CAM1_TX);
-    cam2->begin(115200, SERIAL_8N1, CAM2_RX, CAM2_TX);
+void Runcam::set_state(bool power_on) {
 
-    pinMode(CAM1_ON_OFF, OUTPUT);
-    digitalWrite(CAM1_ON_OFF, LOW);
-    pinMode(CAM2_ON_OFF, OUTPUT);
-    digitalWrite(CAM2_ON_OFF, LOW);
+    if(power_on == _cam_on) { return; }
 
-    return CAM_OK;
+    if (power_on) {
+        // Turn on and init camera
+        digitalWrite(CAM1_ON_OFF, HIGH);
+        delay(200);
+        _uart->begin(115200, SERIAL_8N1, CAM1_RX, CAM1_TX);
+    } else {
+        digitalWrite(CAM1_ON_OFF, LOW);
+        _uart->end();
+    }
+    _cam_on = power_on;
 }
 
-void camera_on_off(HardwareSerial& camera) {
+
+void camera_on_off(Runcam& camera) {
     uint8_t arr[4] = {0xCC, 0x01, 0x01, 0xE7};
     camera.write(arr, 4);
     camera.flush();
 }
 
-void start_recording(HardwareSerial& camera) {
+void start_recording(Runcam& camera) {
     uint8_t arr[4] = {0xCC, 0x01, 0x03, 0x98};
     camera.write(arr, 4);
     camera.flush();
@@ -71,7 +76,7 @@ static size_t read_memory_number_from_buf(uint8_t* buf) {
     return value;
 }
 
-struct read_mem_cap_data_return read_mem_cap_data(HardwareSerial& camera) {
+struct read_mem_cap_data_return read_mem_cap_data(Runcam& camera) {
     uint8_t get_setting_raw[4] = {0xCC, 0x11, 0x03, 0x00};
     uint8_t get_setting[5] = {0xCC, 0x11, 0x03, 0x00, generate_crc(get_setting_raw, 4)};
     camera.write(get_setting, 5);

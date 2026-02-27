@@ -51,7 +51,7 @@ static tinyusb_descriptors_map_t s_desc_cfg;
  *
  * @return Pointer to device descriptor
  */
-uint8_t const *tud_descriptor_device_cb(void)
+__attribute__((weak)) uint8_t const *tud_descriptor_device_cb(void)
 {
     assert(s_desc_cfg.dev);
     return (uint8_t const *)s_desc_cfg.dev;
@@ -64,7 +64,7 @@ uint8_t const *tud_descriptor_device_cb(void)
  * @param[in] index Index of required configuration
  * @return Pointer to configuration descriptor
  */
-uint8_t const *tud_descriptor_configuration_cb(uint8_t index)
+__attribute__((weak)) uint8_t const *tud_descriptor_configuration_cb(uint8_t index)
 {
     (void)index; // Unused, this driver supports only 1 configuration
     // Return configuration descriptor based on Host speed
@@ -79,7 +79,7 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index)
  * Descriptor contents must exist long enough for transfer to complete
  * If not highspeed capable stall this request
  */
-uint8_t const *tud_descriptor_device_qualifier_cb(void)
+__attribute__((weak)) uint8_t const *tud_descriptor_device_qualifier_cb(void)
 {
     return (uint8_t const *)s_desc_cfg.qualifier;
 }
@@ -89,7 +89,7 @@ uint8_t const *tud_descriptor_device_qualifier_cb(void)
  * Descriptor contents must exist long enough for transfer to complete
  * Configuration descriptor in the other speed e.g if high speed then this is for full speed and vice versa
  */
-uint8_t const *tud_descriptor_other_speed_configuration_cb(uint8_t index)
+__attribute__((weak)) uint8_t const *tud_descriptor_other_speed_configuration_cb(uint8_t index)
 {
     if (s_desc_cfg.other_speed == NULL) {
         // Other speed configuration descriptor is not supported
@@ -118,7 +118,7 @@ uint8_t const *tud_descriptor_other_speed_configuration_cb(uint8_t index)
  * @param[in] langid  Language of the descriptor
  * @return Pointer to UTF-16 string descriptor
  */
-uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
+__attribute__((weak)) uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 {
     (void) langid; // Unused, this driver supports only one language in string descriptors
     assert(s_desc_cfg.str);

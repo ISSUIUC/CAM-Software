@@ -4,6 +4,7 @@
 #define JPEG_DRIVER_H
 
 #include <Arduino.h>
+#include "driver/jpeg_encode.h"
 #include "../components/esp_video/private_include/esp_video.h"
 #include "../components/esp_video/private_include/esp_video_device_internal.h"
 #include "esp_cache.h"

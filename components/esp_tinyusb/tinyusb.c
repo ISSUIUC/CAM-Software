@@ -46,7 +46,7 @@ static tinyusb_ctx_t s_ctx; // TinyUSB context
  * @note
  * For Win-based Hosts: SetConfiguration(n) request is present only with available Class in Device Descriptor.
  */
-void tud_mount_cb(void)
+__attribute__((weak)) void tud_mount_cb(void)
 {
 #if (CONFIG_TINYUSB_MSC_ENABLED)
     msc_storage_mount_to_usb();
@@ -69,7 +69,7 @@ void tud_mount_cb(void)
  * - SetConfiguration(0) is called by the host.
  * - Device is disconnected (DCD_EVENT_UNPLUGGED) from the host.
  */
-void tud_umount_cb(void)
+__attribute__((weak)) void tud_umount_cb(void)
 {
 #if (CONFIG_TINYUSB_MSC_ENABLED)
     msc_storage_mount_to_app();

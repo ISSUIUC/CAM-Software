@@ -21,6 +21,12 @@
     #define TVP5151_SCLK 2
     #define TVP5151_AVID 45
 
+    #define SI4463_INT 5
+    #define SI4463_SDN 4
+    #define SI4463_CS 6
+    #define SI4463_GPIO0 27
+    #define SI4463_GPIO1 26
+
     #define LED_BLUE 54
     #define LED_GREEN 53
     #define LED_ORANGE 52
@@ -50,6 +56,8 @@
     #define SI4463_INT 6
     #define SI4463_SDN 5
     #define SI4463_CS 7
+    #define SI4463_GPIO0 12
+    #define SI4463_GPIO1 11
 
     #define LED_RED 23
     #define LED_GREEN 13

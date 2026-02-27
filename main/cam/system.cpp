@@ -17,23 +17,23 @@ static void cmd_thread(CAMSystems* arg) {
             switch (cmd) {
             case (uint8_t)B2BCommand::CAMERA0_OFF: {
                 arg->serial->println("proc cmd: CAM1 OFF");
-                camera_on_off(*arg->cameras.cam1);
+                camera_on_off(arg->cameras.cam1);
                 delay(5000);
-                digitalWrite(CAM1_ON_OFF, LOW);
+                arg->cameras.cam1.set_state(CAM_STATE_OFF);
                 break;}
             case (uint8_t)B2BCommand::CAMERA0_ON: {
                 arg->serial->println("proc cmd: CAM1 ON");
-                digitalWrite(CAM1_ON_OFF, HIGH);
+                arg->cameras.cam1.set_state(CAM_STATE_ON);
                 break;}
             case (uint8_t)B2BCommand::CAMERA1_OFF: {
                 arg->serial->println("proc cmd: CAM2 OFF");
-                camera_on_off(*arg->cameras.cam2);
+                camera_on_off(arg->cameras.cam2);
                 delay(5000);
-                digitalWrite(CAM2_ON_OFF, LOW);
+                arg->cameras.cam2.set_state(CAM_STATE_OFF);
                 break;}
             case (uint8_t)B2BCommand::CAMERA1_ON: {
                 arg->serial->println("proc cmd: CAM2 ON");
-                digitalWrite(CAM2_ON_OFF, HIGH);
+                arg->cameras.cam2.set_state(CAM_STATE_ON);
                 break;}
             case (uint8_t)B2BCommand::MUX_0:
                 arg->serial->println("proc cmd: MUX_0");
@@ -61,7 +61,7 @@ static void poll_thread(CAMSystems* arg) {
 
     while (true) {
         struct read_mem_cap_data_return toReturn1;
-        toReturn1 = read_mem_cap_data(*arg->cameras.cam1);
+        toReturn1 = read_mem_cap_data(arg->cameras.cam1);
         if (toReturn1.status == 1) {
             arg->b2b.state.cam1_on = true;
             cam1_consecutive_invalid = 0;
@@ -84,7 +84,7 @@ static void poll_thread(CAMSystems* arg) {
         }
 
         struct read_mem_cap_data_return toReturn2;
-        toReturn2 = read_mem_cap_data(*arg->cameras.cam2);
+        toReturn2 = read_mem_cap_data(arg->cameras.cam2);
         if (toReturn2.status == 1) {
             arg->b2b.state.cam2_on = true;
             cam2_consecutive_invalid = 0;
@@ -110,8 +110,69 @@ static void poll_thread(CAMSystems* arg) {
     }
 }
 
+// void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems* arg)
+// {
+//     // TODO: implement radio transmission
+//     arg->serial->print("Frame ready, size: ");
+//     arg->serial->println(len);
+// }
+
+bool light_on_frame = false;
+
+void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems* arg)
+{
+
+    light_on_frame = !light_on_frame;
+    digitalWrite(LED_GREEN, light_on_frame);
+
+    // Radio output
+    const uint8_t PACKET_SIZE = 120;
+    uint32_t total_sent = 0;
+
+    while(total_sent < len) {
+        // arg->serial->print("SEND "); arg->serial->print(total_sent);
+        CAMRadioStatus txStatus = arg->radio.sendFast(buf + total_sent, PACKET_SIZE);
+        // arg->serial->print("  OK");
+
+        total_sent += PACKET_SIZE;
+    }
+    
+    
+
+    // CODE BELOW IS FOR JPEG SERIAL OUTPUT!
+    // uint32_t off = 0;
+    // uint8_t tmp[512];
+
+    // light_on_frame = !light_on_frame;
+    // digitalWrite(LED_GREEN, light_on_frame);
+
+    // while (off < len)
+    // {
+    //     uint32_t chunk = len - off;
+
+    //     if (chunk > 512)
+    //         chunk = 512;
+
+    //     // idk why, but writing directly from spiram works for the first couple chunks, then the data gets
+    //     // offset or shifted, making the rest of the image super grainy / makes the colors wrong.
+    //     // To fix this we'll move the frame frmo spiram to program memory in 512 byte chunks before sending them.
+    //     memcpy(tmp, buf + off, chunk);
+
+    //     size_t wrote = arg->serial->write(tmp, chunk);
+    //     arg->serial->flush();
+
+    //     if (wrote > 0)
+    //     {
+    //         off += wrote;
+    //     }
+    //     else
+    //     {
+    //         vTaskDelay(pdMS_TO_TICKS(1));
+    //     }
+    // }
+}
+
 static void video_thread(CAMSystems* arg) {
-    const int EVEN_FIELD_BYTE_OFFSET = 0;
     while (true) {
 
         // Field A
@@ -151,15 +212,15 @@ static void video_thread(CAMSystems* arg) {
         }
         else
         {
-            arg->serial->print("JPEG compressed size: ");
-            arg->serial->println(arg->JPEG.jpg_encoded_size);
+            // arg->serial->print("JPEG compressed size: ");
+            // arg->serial->println(arg->JPEG.jpg_encoded_size);
 
-            arg->serial->print("*FRAME ");
-            arg->serial->println(arg->JPEG.jpg_encoded_size);
+            // arg->serial->print("*FRAME ");
+            // arg->serial->println(arg->JPEG.jpg_encoded_size);
 
             //move to new file once radio is added
-            on_frame_ready(arg->JPEG.jpg_encoded_size, arg->JPEG.jpg_encoder_output_buf);
-            arg->serial->println("**DONE");
+            on_frame_ready(arg->JPEG.jpg_encoded_size, arg->JPEG.jpg_encoder_output_buf, arg);
+            // arg->serial->println("**DONE");
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
@@ -168,52 +229,56 @@ static void video_thread(CAMSystems* arg) {
 /* Begin all system data */
 [[noreturn]] void sys_begin() {
 
+    digitalWrite(LED_ORANGE, HIGH);
+
     USB.begin();
     USBSerial.begin(115200);
-
     sys.serial = &USBSerial;
+
+    sys.cameras.cam1.set_state(true); // TEMPORARY!!
 
     uint8_t tvp_res = sys.tvp.init();
     if (tvp_res != CAM_OK) {
-        sys.serial->print("TVP Error: ");
-        sys.serial->println(tvp_res);
+        sys.serial->print("[sys_begin] tvp init failed: Code "); sys.serial->println(tvp_res); 
+        digitalWrite(LED_RED, HIGH);
         while (1) {}
     }
-
-    sys.cameras.cam1 = &Serial1;
-    sys.cameras.cam2 = &Serial2;
-    uint8_t cam_res = sys.cameras.init();
-    if (cam_res != CAM_OK) {
-        sys.serial->print("Camera Error: ");
-        sys.serial->println(cam_res);
-        while (1) {}
-    }
+    sys.serial->println("[sys_begin] tvp init OK");
 
     uint8_t b2b_res = sys.b2b.init();
     if (b2b_res != CAM_OK) {
         sys.serial->print("B2B Error: ");
         sys.serial->println(b2b_res);
+        digitalWrite(LED_GREEN, HIGH);
         while (1) {}
     }
-
-    //tvp5151 tvp(TVP5151_PDN, TVP5151_RESET, TVP5151_ADDR, &Wire);
-
+    sys.serial->println("[sys_begin] b2b init done");
+    
     sys.video = DVP_init();
-
-    pinMode(CAM1_ON_OFF, OUTPUT);
-    digitalWrite(CAM1_ON_OFF, LOW);
-    digitalWrite(CAM1_ON_OFF, HIGH);
-    digitalWrite(LED_RED, HIGH);
-
-    sys.serial->println("cam on, waiting for video to stabilize");
-    delay(10000);
-
-   
-    sys.tvp.init();
-
-    start_dvp_cature(sys.video);
+    start_dvp_capture(sys.video);
 
     sys.JPEG.init();
+
+    while(!sys.tvp.tvp_locked()) {
+        digitalWrite(LED_RED, HIGH);
+        bool vsync_locked = sys.tvp.tvp.read_vertical_sync_lock_status();
+        bool hsync_locked = sys.tvp.tvp.read_horizontal_sync_lock_status();
+        bool color_locked = sys.tvp.tvp.read_color_subcarrier_lock_status();
+
+        sys.serial->print(vsync_locked); sys.serial->print(hsync_locked); sys.serial->println(color_locked);
+        delay(100);
+    }
+
+    digitalWrite(LED_RED, LOW);
+
+    // Radio begin
+    CAMRadioStatus radio_status = sys.radio.init(SPI);
+    if(radio_status != CAMRadioStatus::CAMRADIO_OK) {
+        sys.serial->print("[sys_begin] Radio init fail: "); sys.serial->println(radio_status);
+        digitalWrite(LED_GREEN, HIGH);
+        digitalWrite(LED_ORANGE, HIGH);
+        while(1) {};
+    }
 
     // From the old code -- seems like we discard some frames. I don't exactly know the logic behind it, but removing
     // this code corrupts video data. strange!
@@ -231,6 +296,7 @@ static void video_thread(CAMSystems* arg) {
     xTaskCreatePinnedToCore((TaskFunction_t) poll_thread, "poll", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, 0);
     xTaskCreatePinnedToCore((TaskFunction_t) video_thread, "video", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, 0);
 
+    digitalWrite(LED_ORANGE, LOW);
     while (true) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }

@@ -44,14 +44,17 @@ void jpeg_encoder::merge_fields(bool a_odd, esp_video_buffer_element *elem_a, es
     uint8_t *odd_field = a_odd ? elem_a->buffer : elem_b->buffer;
     uint8_t *even_field = a_odd ? elem_b->buffer : elem_a->buffer;
 
-    const int row_stride = 720 * 2;
-    for (int i = 0; i < 240; i++)
-    {
-        memcpy(merged_buf + (2 * i) * row_stride, odd_field + i * row_stride, row_stride);
-        uint8_t *dst = merged_buf + (2 * i + 1) * row_stride;
-        uint8_t *src = even_field + i * row_stride;
-        memcpy(dst, src, row_stride);
-    }
+    memcpy(merged_buf, odd_field, 720 * 480);
+    memcpy(merged_buf + 720*480, even_field, 720 * 480);
+
+    // const int row_stride = 722 * 2;
+    // for (int i = 0; i < 240; i++)
+    // {
+    //     memcpy(merged_buf + (2 * i) * row_stride, odd_field + i * row_stride, row_stride);
+    //     uint8_t *dst = merged_buf + (2 * i + 1) * row_stride;
+    //     uint8_t *src = even_field + i * row_stride;
+    //     memcpy(dst, src, row_stride);
+    // }
 }
 
 void jpeg_encoder::clean_cache_and_memory()

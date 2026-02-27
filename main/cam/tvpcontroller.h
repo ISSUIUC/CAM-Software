@@ -22,13 +22,11 @@ class TVPController {
         }  
 
         uint16_t device_id = tvp.read_device_id();
-        // Serial.print("Device ID: 0x");
-        // Serial.println(device_id, HEX);
         if(device_id != TVP_DEVICE_ID) {
             return CAM_TVP_FAILED_TO_COMMUNICATE;
         }
 
-        if(!tvp.source_select(CAM1)) {  //make sure this is the right camera
+        if(!tvp.source_select(CAM2)) {  //make sure this is the right camera
             return CAM_TVP_FAILED_TO_SS;
         }
 
@@ -49,35 +47,26 @@ class TVPController {
             return CAM_TVP_FAILED_TO_SET_FORMAT;
         }
 
-        // Check vertical line count - if this shows ~525 for NTSC, video IS being processed
-        uint16_t line_count = tvp.read_vertical_line_count();
-        Serial.print("Vertical Line Count: ");
-        Serial.println(line_count);
+        return CAM_OK;
+    };
 
+    uint8_t tvp_locked() {
         bool vsync_locked;
         bool hsync_locked;
         bool color_locked;
 
-        while (!vsync_locked || !hsync_locked || !color_locked)
+        constexpr int MAX_TVP_LOCK_ATTEMPTS = 10;
+        int num_attempts = 0;
+        while ((!vsync_locked || !hsync_locked || !color_locked) && num_attempts < MAX_TVP_LOCK_ATTEMPTS)
         {
-            Serial.println("Waiting for TVP to lock...");
-
             vsync_locked = tvp.read_vertical_sync_lock_status();
             hsync_locked = tvp.read_horizontal_sync_lock_status();
             color_locked = tvp.read_color_subcarrier_lock_status();
-            Serial.print("VSYNC: ");
-            Serial.print(vsync_locked);
-            Serial.print(", HSYNC: ");
-            Serial.print(hsync_locked);
-            Serial.print(", COL: ");
-            Serial.println(color_locked);
+            num_attempts++;
         }
 
-        delay(1000);
-        Serial.println("Finished TVP init");
-
-        return CAM_OK;
-    };
+        return vsync_locked && hsync_locked && color_locked;
+    }
 
     bool source_select(CAM_SELECT camera) {
         return tvp.source_select(camera);

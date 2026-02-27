@@ -11,8 +11,7 @@
 #include <Arduino.h>
 
 esp_video* DVP_init();
-void start_dvp_cature(esp_video *video);
-void on_frame_ready(uint32_t len, uint8_t *buf);
+void start_dvp_capture(esp_video *video);
 
 
 #endif

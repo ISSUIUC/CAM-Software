@@ -10,6 +10,8 @@
 #include "DVP.h"
 #include "tvpcontroller.h"
 #include "JPEG.h"
+#include "cam_radio/cam_radio.h"
+#include "SPI.h"
 
 
 #include "esp_cache.h"
@@ -30,4 +32,5 @@ struct CAMSystems {
     USBCDC* serial;
     esp_video* video;
     jpeg_encoder JPEG;
+    CAMRadio radio;
 };

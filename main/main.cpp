@@ -20,7 +20,7 @@
 void setup()
 {
     #ifdef IS_CAM
-    Wire.begin(I2C_SCL, I2C_SDA);
+    Wire.begin(I2C_SDA, I2C_SCL);
     #endif
 
     SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
@@ -29,8 +29,6 @@ void setup()
     pinMode(LED_BLUE, OUTPUT);
     pinMode(LED_GREEN, OUTPUT);
     pinMode(LED_ORANGE, OUTPUT);
-
-    // TODO(?): Si4463 init here?
 
     sys_begin();
 }
