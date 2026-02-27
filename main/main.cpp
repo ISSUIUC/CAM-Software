@@ -20,7 +20,8 @@
 void setup()
 {
     #ifdef IS_CAM
-    Wire.begin(I2C_SDA, I2C_SCL);
+    Wire.setPins(I2C_SDA, I2C_SCL);
+    Wire.begin();
     #endif
 
     SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);

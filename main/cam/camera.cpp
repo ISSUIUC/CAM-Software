@@ -11,11 +11,11 @@ void Runcam::set_state(bool power_on) {
 
     if (power_on) {
         // Turn on and init camera
-        digitalWrite(CAM1_ON_OFF, HIGH);
+        digitalWrite(_pwr_pin, HIGH);
         delay(200);
-        _uart->begin(115200, SERIAL_8N1, CAM1_RX, CAM1_TX);
+        _uart->begin(115200, SERIAL_8N1, _cam_rx, _cam_tx);
     } else {
-        digitalWrite(CAM1_ON_OFF, LOW);
+        digitalWrite(_pwr_pin, LOW);
         _uart->end();
     }
     _cam_on = power_on;
