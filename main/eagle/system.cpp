@@ -18,30 +18,48 @@ uint32_t bytes_received;
 static void receive_thread(EAGLESystems* arg) {
     si4463_t* handle = arg->radio.getHandle();
     static uint8_t rxBuffer[129];  // Static, max FIFO size is 129 bytes
+    int i = 0;
+    bool once = false; 
 
     while(true) {
         uint8_t rxBytes = SI4463_GetRxFifoReceivedBytesFast(handle);
+        
 
         if (SI4463_ReadRxFifoFast(handle, rxBuffer, rxBytes) == SI4463_OK) {
-
+            i++;
 
             constexpr uint32_t frame_size = FRAME_HEIGHT * FRAME_WIDTH * 2;
 
-            if(bytes_received + rxBytes < frame_size) {
-                memcpy(frame_buffer + bytes_received, rxBuffer, rxBytes);
-            } else {
-                memcpy(frame_buffer + bytes_received, rxBuffer, (frame_size - bytes_received));
-                bytes_received = 0;
-                tud_video_n_frame_xfer(0, 0, (void *)frame_buffer, FRAME_SIZE_BYTES);
-                bl_stat = !bl_stat;
-                digitalWrite(LED_BLUE, bl_stat);
+            // if(bytes_received + rxBytes < frame_size) {
+            //     memcpy(frame_buffer + bytes_received, rxBuffer, rxBytes);
+            // } else {
+            //     memcpy(frame_buffer + bytes_received, rxBuffer, (frame_size - bytes_received));
+            //     bytes_received = 0;
+            //     // tud_video_n_frame_xfer(0, 0, (void *)frame_buffer, FRAME_SIZE_BYTES);
+            //     serial.printf("Frame received: %u bytes\n", frame_size);    
+            //     bl_stat = !bl_stat;
+            //     digitalWrite(LED_BLUE, bl_stat);
 
+            // }
+            #ifdef USE_USB_DEBUG
+
+
+            if(!once) {
+                arg->serial->println("*FRAME"); 
+                once = true;
+            }
+            
+            // arg->serial->print("RX "); arg->serial->print(rxBytes); arg->serial->print(": "); 
+
+            if(i<5359){
+                arg->serial->print((char*)rxBuffer);
+            }
+            else{
+                arg->serial->println("**DONE"); 
+                i=0;
+                once = false;
             }
 
-            
-            
-            #ifdef USE_USB_DEBUG
-            arg->serial->print("RX "); arg->serial->print(rxBytes); arg->serial->print(": "); arg->serial->println((char*)rxBuffer);
             #endif
         }
 
