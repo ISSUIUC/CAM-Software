@@ -144,13 +144,13 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems* arg)
     const uint8_t PACKET_SIZE = 120;
     uint32_t total_sent = 0;
 
-    while(total_sent < len) {
-        // arg->serial->print("SEND "); arg->serial->print(total_sent);
-        CAMRadioStatus txStatus = arg->radio.sendFast(buf + total_sent, PACKET_SIZE);
-        // arg->serial->print("  OK");
+    // while(total_sent < len) {
+    //     // arg->serial->print("SEND "); arg->serial->print(total_sent);
+    //     CAMRadioStatus txStatus = arg->radio.sendFast(buf + total_sent, PACKET_SIZE);
+    //     // arg->serial->print("  OK");
 
-        total_sent += PACKET_SIZE;
-    }
+    //     total_sent += PACKET_SIZE;
+    // }
 
     CAMRadioStatus txStatus = arg->radio.sendFast(code, PACKET_SIZE);
     
