@@ -19,8 +19,11 @@ import queue
 import threading
 import time
 
+import io
 import serial
 import numpy as np
+from PIL import Image, ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 try:
     import cv2
@@ -68,8 +71,21 @@ def extract_jpegs(buffer: bytes):
 
 def decode_jpeg(jpeg_bytes: bytes):
     """
-    Decode JPEG to BGR numpy array.
+    Decode JPEG to BGR numpy array. Tries Pillow first (lenient),
+    falls back to OpenCV.
     """
+    # Pillow is much more lenient with corrupt JPEGs
+    try:
+        pil_img = Image.open(io.BytesIO(jpeg_bytes))
+        pil_img.load()  # force decode
+        img = np.array(pil_img)
+        if len(img.shape) == 3 and img.shape[2] == 3:
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        return img
+    except Exception as e:
+        print(f"  Pillow decode failed: {e}")
+
+    # Fallback to OpenCV
     arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
     return cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
@@ -133,8 +149,8 @@ def serial_worker(ser, frame_queue, stop_event):
                 with open(OUTPUT_SINGLE, "wb") as f:
                     f.write(jpeg)
                 # Also save numbered copy for comparison
-                with open(f"frame_{frame_count:04d}.bin", "wb") as f:
-                    f.write(jpeg)
+                # with open(f"frame_{frame_count:04d}.bin", "wb") as f:
+                #     f.write(jpeg)
 
                 # Append to MJPEG stream
                 stream_file.write(jpeg)

@@ -17,6 +17,7 @@ uint8_t *frame_buffer = nullptr;
 
 // Must match CAM side
 static const uint8_t FRAME_MAGIC[8] = {0xCA, 0x3E, 0xBE, 0xEF, 0x57, 0xA1, 0xD0, 0x92};
+static const uint8_t HEADER_OVERHEAD = 12; // 8 magic + 4 size
 
 enum RxState { WAITING_FOR_HEADER, RECEIVING_DATA };
 RxState rx_state = WAITING_FOR_HEADER;
@@ -65,15 +66,20 @@ static void receive_thread(EAGLESystems* arg) {
 
         if (SI4463_ReadRxFifoFast(handle, rxBuffer, rxBytes) == SI4463_OK) {
 
-            rxBytes = 64;
+            if (rxBytes > 64) rxBytes = 64;  // bytes past 64 are unreliable
 
             if (rx_state == WAITING_FOR_HEADER) {
                 // Check for magic header
-                if (rxBytes >= 12 && memcmp(rxBuffer, FRAME_MAGIC, 8) == 0) {
+                if (rxBytes >= HEADER_OVERHEAD && memcmp(rxBuffer, FRAME_MAGIC, 8) == 0) {
                     memcpy(&jpeg_size, &rxBuffer[8], sizeof(uint32_t));
                     bytes_received = 0;
 
                     if (jpeg_size > 0 && jpeg_size <= FRAME_SIZE_BYTES) {
+                        // Extract JPEG data packed after the header
+                        uint32_t header_data = rxBytes - HEADER_OVERHEAD;
+                        if (header_data > jpeg_size) header_data = jpeg_size;
+                        memcpy(frame_buffer, &rxBuffer[HEADER_OVERHEAD], header_data);
+                        bytes_received = header_data;
                         rx_state = RECEIVING_DATA;
                     }
                 }

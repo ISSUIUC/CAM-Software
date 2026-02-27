@@ -123,8 +123,9 @@ bool light_on_frame = false;
 // Header packet layout (64 useful bytes):
 //   [0..7]   magic
 //   [8..11]  JPEG size (little-endian uint32_t)
-//   [12..63] zeros
+//   [12..63] first 52 bytes of JPEG data
 static const uint8_t FRAME_MAGIC[8] = {0xCA, 0x3E, 0xBE, 0xEF, 0x57, 0xA1, 0xD0, 0x92};
+static const uint8_t HEADER_OVERHEAD = 12; // 8 magic + 4 size
 
 void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems* arg)
 {
@@ -134,16 +135,25 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems* arg)
     const uint8_t PACKET_SIZE = 120;
     const uint8_t GOOD_PL = 64;
 
-    // Send header packet with magic + JPEG size
+    // Send header packet with magic + size + first JPEG bytes
     uint8_t header[PACKET_SIZE] = {0};
     memcpy(header, FRAME_MAGIC, 8);
     memcpy(header + 8, &len, sizeof(uint32_t));
+    uint32_t header_data = (len < (GOOD_PL - HEADER_OVERHEAD)) ? len : (GOOD_PL - HEADER_OVERHEAD);
+    memcpy(header + HEADER_OVERHEAD, buf, header_data);
     arg->radio.sendFast(header, PACKET_SIZE);
 
-    // Send JPEG data
-    uint32_t total_sent = 0;
+    // Send remaining JPEG data
+    // Must copy from SPIRAM to stack before SPI send — reading directly from
+    // SPIRAM causes data to get corrupted/repeated after the first few chunks.
+    uint8_t tx_tmp[PACKET_SIZE];
+    uint32_t total_sent = header_data;
     while(total_sent < len) {
-        CAMRadioStatus txStatus = arg->radio.sendFast(buf + total_sent, PACKET_SIZE);
+        uint32_t remaining = len - total_sent;
+        uint32_t to_copy = (remaining < GOOD_PL) ? remaining : GOOD_PL;
+        memset(tx_tmp, 0, PACKET_SIZE);
+        memcpy(tx_tmp, buf + total_sent, to_copy);
+        CAMRadioStatus txStatus = arg->radio.sendFast(tx_tmp, PACKET_SIZE);
         total_sent += GOOD_PL;
     }
     
