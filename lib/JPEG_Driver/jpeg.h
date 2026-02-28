@@ -18,11 +18,11 @@ class jpeg_encoder {
     };
 
     jpeg_encode_cfg_t enc_config = {
-        .height = 480,
+        .height = 240,
         .width = 720,
         .src_type = JPEG_ENCODE_IN_FORMAT_YUV422,
         .sub_sample = JPEG_DOWN_SAMPLING_YUV422, // this works for some reason
-        .image_quality = 80,
+        .image_quality = 20,
     };
 
     jpeg_encode_memory_alloc_cfg_t mem_cfg_output = {
@@ -33,8 +33,8 @@ class jpeg_encoder {
         .buffer_direction = JPEG_ENC_ALLOC_INPUT_BUFFER,
     };
 
-    int jpg_output_size = 720 * 480 * 2; // "in theory we could set this to some valid fraction of the original size, but rn idc" - Michael
-    int merged_size = 720 * 480 * 2;
+    int jpg_output_size = 720 * 240 * 2; // "in theory we could set this to some valid fraction of the original size, but rn idc" - Michael
+    int merged_size = 720 * 240 * 2;
 
     jpeg_encoder_handle_t encoder_engine;
 

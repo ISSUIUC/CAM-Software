@@ -44,8 +44,8 @@ void jpeg_encoder::merge_fields(bool a_odd, esp_video_buffer_element *elem_a, es
     uint8_t *odd_field = a_odd ? elem_a->buffer : elem_b->buffer;
     uint8_t *even_field = a_odd ? elem_b->buffer : elem_a->buffer;
 
-    memcpy(merged_buf, odd_field, 720 * 480);
-    memcpy(merged_buf + 720*480, even_field, 720 * 480);
+    // Copy single field (720x240 YUV422 = 345,600 bytes)
+    memcpy(merged_buf, odd_field, merged_size);
 
     // const int row_stride = 722 * 2;
     // for (int i = 0; i < 240; i++)

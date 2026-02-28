@@ -31,7 +31,7 @@ try:
     HAS_DISPLAY = True
 except ImportError:
     HAS_DISPLAY = False
-PORT = "COM13"
+PORT = "COM12"
 
 BAUD = 115200
 
