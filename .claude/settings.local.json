@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch",
+      "WebFetch(domain:docs.espressif.com)",
+      "Bash(gh api:*)",
+      "Bash(curl:*)"
+    ]
+  }
+}

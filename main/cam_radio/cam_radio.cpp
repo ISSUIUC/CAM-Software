@@ -1,53 +1,64 @@
 #include <cam_radio/cam_radio.h>
 
-void CAMRadio::setChannel(uint8_t new_ch) {
-    _ch = new_ch;
+CAMRadioStatus CAMRadio::init(SPIClass& spi) {
+    Si4463Pins pins = {
+        .spi   = &spi,
+        .cs    = SI4463_CS,
+        .sdn   = SI4463_SDN,
+        .irq   = SI4463_INT,
+#ifdef SI4463_GPIO0
+        .gpio0 = SI4463_GPIO0,
+#else
+        .gpio0 = 0xFF,
+#endif
+#ifdef SI4463_GPIO1
+        .gpio1 = SI4463_GPIO1,
+#else
+        .gpio1 = 0xFF,
+#endif
+    };
+
+    if (!_radio.begin(pins)) {
+        Serial.printf("[CAMRadio] init failed, err=%u\n", _radio.getLastError());
+        return CAMRADIO_INIT_ERR;
+    }
+
+    // Print config for debug verification
+    _radio.printConfig(Serial);
+    _radio.printDebug(Serial);
+
+    Serial.println("[CAMRadio] init OK (Si4463Nuke driver)");
+    return CAMRADIO_OK;
 }
 
-CAMRadioStatus CAMRadio::init(SPIClass& _spi) {
-    si_hal_set_spi(_spi);
-    si_hal_arduino_init();
-    si_hal_bind_arduino(&_r);
-    setChannel(0);
-
-    int8_t result = SI4463_Init(&_r);
-    Serial.printf("[CAMRadio] SI4463_Init returned: %d\n", result);
-    if(result != SI4463_OK) { return CAMRadioStatus::CAMRADIO_INIT_ERR; };
-
-    // Clear any pending errors
-    SI4463_ClearAllInterrupts(&_r);
-
-    return CAMRadioStatus::CAMRADIO_OK;
+CAMRadioStatus CAMRadio::send(const uint8_t* data, uint32_t len) {
+    if (!_radio.tx(data, len)) {
+        Serial.printf("[CAMRadio] tx failed, err=%u\n", _radio.getLastError());
+        return CAMRADIO_INIT_ERR;
+    }
+    return CAMRADIO_OK;
 }
 
-CAMRadioStatus CAMRadio::startRx() {
-    // Start RX mode with length=0 (variable length), stay in RX after timeout/valid/invalid packet
-    int8_t result = SI4463_StartRx(&_r, 0, true, true, true);
-    return (result == SI4463_OK) ? CAMRADIO_OK : CAMRADIO_INIT_ERR;
+void CAMRadio::startRx(uint8_t* buf, uint32_t bufLen) {
+    _radio.startRx(buf, bufLen);
 }
 
-CAMRadioStatus CAMRadio::send(const uint8_t* data, uint8_t len) {
-    int8_t result = SI4463_Transmit(&_r, data, len);
-    return (result == SI4463_OK) ? CAMRADIO_OK : CAMRADIO_INIT_ERR;
+void CAMRadio::update() {
+    _radio.update();
 }
 
-CAMRadioStatus CAMRadio::sendFast(const uint8_t* data, uint8_t len) {
-    int8_t result = SI4463_TransmitFast(&_r, data, len);
-    return (result == SI4463_OK) ? CAMRADIO_OK : CAMRADIO_INIT_ERR;
+bool CAMRadio::isTxBusy() const {
+    return _radio.isBusy();
 }
 
-void CAMRadio::getPartInfo(uint8_t* buf) {
-    SI4463_GetPartInfo(&_r, buf);
+bool CAMRadio::available() {
+    return _radio.available();
 }
 
-si4463_state_t CAMRadio::getState() {
-    return SI4463_GetCurrentState(&_r);
+uint32_t CAMRadio::getReceivedLength() const {
+    return _radio.getReceivedLength();
 }
 
-void CAMRadio::getChipStatus() {
-    SI4463_GetChipStatus(&_r);
-}
-
-bool CAMRadio::checkCTS() {
-    return digitalRead(SI4463_GPIO1) == HIGH;
+int CAMRadio::getRSSI() const {
+    return _radio.getRSSI();
 }
