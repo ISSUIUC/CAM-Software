@@ -24,16 +24,18 @@ struct cam_state_t {
     bool cam1_rec = false;
     bool cam2_rec = false;
     bool vmux_state = false;
+    bool vtx_state = false;
     bool cam_ack = false;
 
     uint8_t encode() const {
         uint8_t dat = 0;
-        dat |= (cam1_on) << 0;
-        dat |= (cam2_on) << 1;
-        dat |= (cam1_rec) << 2;
-        dat |= (cam2_rec) << 3;
-        dat |= (vmux_state) << 4;
-        dat |= (cam_ack) << 5;
+        dat |= (cam1_on) << 1;
+        dat |= (cam2_on) << 0;
+        dat |= (cam1_rec) << 3;
+        dat |= (cam2_rec) << 2;
+        dat |= (vtx_state) << 4;
+        dat |= (vmux_state) << 5;
+        dat |= (cam_ack) << 6;
         return dat;
     }
 };

@@ -14,6 +14,7 @@ static void cmd_thread(CAMSystems* arg) {
     uint8_t cmd;
     while (true) {
         if (arg->b2b.dequeue(&cmd)) {
+            arg->serial->print("CMD: "); arg->serial->println(cmd);
             switch (cmd) {
             case (uint8_t)B2BCommand::CAMERA0_OFF: {
                 arg->serial->println("proc cmd: CAM1 OFF");
@@ -36,14 +37,14 @@ static void cmd_thread(CAMSystems* arg) {
                 arg->cameras.cam2.set_state(CAM_STATE_ON);
                 break;}
             case (uint8_t)B2BCommand::MUX_0:
-                arg->serial->println("proc cmd: MUX_0");
-                arg->tvp.source_select(CAM1);
-                arg->b2b.state.vmux_state = false;
+                // arg->serial->println("proc cmd: MUX_0");
+                // arg->tvp.source_select(CAM1);
+                // arg->b2b.state.vmux_state = false;
                 break;
             case (uint8_t)B2BCommand::MUX_1:
-                arg->serial->println("proc cmd: MUX_1");
-                arg->tvp.source_select(CAM2);
-                arg->b2b.state.vmux_state = true;
+                // arg->serial->println("proc cmd: MUX_1");
+                // arg->tvp.source_select(CAM2);
+                // arg->b2b.state.vmux_state = true;
                 break;
             default:
                 break;
@@ -118,12 +119,6 @@ static void poll_thread(CAMSystems* arg) {
     }
 }
 
-// void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems* arg)
-// {
-//     // TODO: implement radio transmission
-//     arg->serial->print("Frame ready, size: ");
-//     arg->serial->println(len);
-// }
 
 bool light_on_frame = false;
 
@@ -134,6 +129,7 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems* arg)
 
     light_on_frame = !light_on_frame;
     digitalWrite(LED_GREEN, light_on_frame);
+    arg->b2b.state.vmux_state = !arg->b2b.state.vmux_state;
 
     // arg->serial->println("Get Frame Done");
 
@@ -148,24 +144,23 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems* arg)
 
 static void video_thread(CAMSystems* arg) {
     while (true) {
+        vTaskDelay(pdMS_TO_TICKS(10));
 
         // Field A
-        esp_video_buffer_element *elem_a = esp_video_recv_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, portMAX_DELAY);
+        esp_video_buffer_element *elem_a = esp_video_recv_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, pdMS_TO_TICKS(100));
         if (!elem_a)
         {
-            while (1)
-            {
-            };
+            continue;
         }
         bool a_odd = !arg->tvp.tvp.read_field_sequence_status();
 
         // Field B
-        esp_video_buffer_element *elem_b = esp_video_recv_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, portMAX_DELAY);
+        esp_video_buffer_element *elem_b = esp_video_recv_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, pdMS_TO_TICKS(100));
         if (!elem_b)
         {
-            while (1)
-            {
-            };
+            // clear A
+            esp_video_queue_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, elem_a);
+            continue;
         }
 
         bool b_odd = !arg->tvp.tvp.read_field_sequence_status();
@@ -193,10 +188,20 @@ static void video_thread(CAMSystems* arg) {
             // arg->serial->println(arg->JPEG.jpg_encoded_size);
 
             //move to new file once radio is added
+
+            if(!arg->tvp.tvp_locked()) {
+                digitalWrite(LED_RED, HIGH);
+                arg->b2b.state.vtx_state = false;
+                vTaskDelay(pdMS_TO_TICKS(10));
+                
+                continue;
+            }
+            arg->b2b.state.vtx_state = true; // VTX state reports image phase lock (for now)
+
+            digitalWrite(LED_RED, LOW);
             on_frame_ready(arg->JPEG.jpg_encoded_size, arg->JPEG.jpg_encoder_output_buf, arg);
             // arg->serial->println("**DONE");
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -239,7 +244,6 @@ static void comm_thread(CAMSystems* arg) {
 
             if(cur_time - time_entered_fallback_state > I2C_RECOVERY_FALLBACK_TIME && !is_in_fallback_state) {
                 is_in_fallback_state = true;
-                digitalWrite(LED_RED, HIGH);
                 // arg->buzzer.play_tune(beep_beep, BEEP_LENGTH);
                 delay(50);
                 digitalWrite(CAM1_ON_OFF, HIGH);
@@ -284,7 +288,6 @@ static void comm_thread(CAMSystems* arg) {
     USBSerial.begin(115200);
     sys.serial = &USBSerial;
 
-    sys.cameras.cam1.set_state(true); // TEMPORARY!!
 
     uint8_t tvp_res = sys.tvp.init();
     if (tvp_res != CAM_OK) {
@@ -308,18 +311,6 @@ static void comm_thread(CAMSystems* arg) {
 
     sys.JPEG.init();
 
-    while(!sys.tvp.tvp_locked()) {
-        digitalWrite(LED_RED, HIGH);
-        bool vsync_locked = sys.tvp.tvp.read_vertical_sync_lock_status();
-        bool hsync_locked = sys.tvp.tvp.read_horizontal_sync_lock_status();
-        bool color_locked = sys.tvp.tvp.read_color_subcarrier_lock_status();
-
-        sys.serial->print(vsync_locked); sys.serial->print(hsync_locked); sys.serial->println(color_locked);
-        delay(100);
-    }
-
-    digitalWrite(LED_RED, LOW);
-
     // Radio begin
     CAMRadioStatus radio_status = sys.radio.init(SPI);
     if(radio_status != CAMRadioStatus::CAMRADIO_OK) {
@@ -329,24 +320,15 @@ static void comm_thread(CAMSystems* arg) {
         while(1) {};
     }
 
-    // From the old code -- seems like we discard some frames. I don't exactly know the logic behind it, but removing
-    // this code corrupts video data. strange!
-    for (int i = 0; i < 5; i++)
-    {
-        esp_video_buffer_element *discard = esp_video_recv_element(sys.video, V4L2_BUF_TYPE_VIDEO_CAPTURE, portMAX_DELAY);
-        if (discard)
-        {
-            sys.serial->printf("Discarded frame %d (%lu bytes)\n", i, (unsigned long)discard->valid_size);
-            esp_video_queue_element(sys.video, V4L2_BUF_TYPE_VIDEO_CAPTURE, discard);
-        }
-    }
-
-    xTaskCreatePinnedToCore((TaskFunction_t) cmd_thread, "cmdq", THREAD_STACK_SIZE_DEFAULT, &sys, 7, nullptr, 0);
-    xTaskCreatePinnedToCore((TaskFunction_t) poll_thread, "poll", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, 0);
-    xTaskCreatePinnedToCore((TaskFunction_t) comm_thread, "comm", THREAD_STACK_SIZE_DEFAULT, &sys, 6, nullptr, 0);
-    xTaskCreatePinnedToCore((TaskFunction_t) video_thread, "video", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, 0);
+    xTaskCreatePinnedToCore((TaskFunction_t) cmd_thread, "cmdq", THREAD_STACK_SIZE_DEFAULT, &sys, 10, nullptr, CORE_0);
+    xTaskCreatePinnedToCore((TaskFunction_t) poll_thread, "poll", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, CORE_0);
+    xTaskCreatePinnedToCore((TaskFunction_t) comm_thread, "comm", THREAD_STACK_SIZE_DEFAULT, &sys, 8, nullptr, CORE_0);
+    xTaskCreatePinnedToCore((TaskFunction_t) video_thread, "video", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, CORE_0);
 
     digitalWrite(LED_ORANGE, LOW);
+
+    tone(BUZZER_PIN, 2700, 500);
+
     while (true) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }

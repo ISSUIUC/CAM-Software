@@ -29,9 +29,9 @@ bool B2BHandler::on_request(i2c_slave_dev_handle_t i2c_slave, const i2c_slave_re
     bbl = !bbl;
     digitalWrite(LED_BLUE, bbl);
 
-    uint8_t buf[1] = { self->state.encode() };
+    uint8_t buf[3] = { self->state.encode(), 0, 0 };
     uint32_t write_len = 0;
-    i2c_slave_write(i2c_slave, buf, 1, &write_len, 0);
+    i2c_slave_write(i2c_slave, buf, 3, &write_len, 0);
     return false;
 }
 

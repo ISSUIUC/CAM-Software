@@ -1,6 +1,8 @@
 
 #pragma once 
 
+#define CORE_0 0
+#define CORE_1 1
 
 #ifdef IS_CAM
     #define SPI_SCK 9
@@ -40,6 +42,7 @@
     #define CAM2_TX 32
 
     #define BUZZER_PIN 24
+    #define BUZZER_CHANNEL 0
 
     #define B2B_I2C_SDA 39
     #define B2B_I2C_SCL 40
@@ -64,4 +67,5 @@
     #define LED_BLUE 20
     #define LED_ORANGE 22
     #define BUZZER_PIN 21
+    #define BUZZER_CHANNEL 0
 #endif
