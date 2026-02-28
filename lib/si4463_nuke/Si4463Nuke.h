@@ -153,7 +153,13 @@ private:
     uint16_t _rxFragsRcvd;
     uint8_t  _rxFrameId;
     int      _rssi;
+    uint32_t _rxLastFragMs;  // millis() of last valid fragment received
 
     // ---- Shared ----
-    uint8_t _frameIdGen;
+    uint8_t  _frameIdGen;
+
+    // ---- Debug counters ----
+    uint32_t _rxPollHits;      // total fragments detected (across all frames)
+    uint32_t _rxFrameResets;   // times reassembly was reset by new frameId
+    uint32_t _rxCrcFail;       // packets rejected by header CRC
 };

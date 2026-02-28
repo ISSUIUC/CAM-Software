@@ -14,6 +14,9 @@ USBCDC USBSerial;
 bool bl_stat = false;
 
 uint8_t *frame_buffer = nullptr;
+uint8_t *output_buffer = nullptr;
+uint32_t output_len = 0;
+SemaphoreHandle_t output_sem = nullptr;
 
 void chunk_output(EAGLESystems* arg, uint8_t* buf, size_t len) {
     // CODE BELOW IS FOR JPEG SERIAL OUTPUT!
@@ -46,6 +49,24 @@ void chunk_output(EAGLESystems* arg, uint8_t* buf, size_t len) {
     }
 };
 
+// Output thread: runs on core 1, waits for semaphore, sends frame over serial.
+// This keeps the receive thread (core 0) free to keep polling the radio.
+static void output_thread(EAGLESystems* arg) {
+    while (true) {
+        // Wait for a frame to be ready
+        if (xSemaphoreTake(output_sem, portMAX_DELAY) == pdTRUE) {
+            uint32_t len = output_len;
+            if (len > 0) {
+                #ifdef USE_USB_DEBUG
+                arg->serial->printf("*FRAME %lu\n", (unsigned long)len);
+                chunk_output(arg, output_buffer, len);
+                arg->serial->println("**DONE");
+                #endif
+            }
+        }
+    }
+}
+
 static void receive_thread(EAGLESystems* arg) {
     Si4463Nuke* radio = arg->radio.getDriver();
 
@@ -59,19 +80,17 @@ static void receive_thread(EAGLESystems* arg) {
 
         if (radio->available()) {
             uint32_t len = radio->getReceivedLength();
-            int rssi = radio->getRSSI();
-
-            #ifdef USE_USB_DEBUG
-            arg->serial->printf("*FRAME %lu (rssi=%d, frags=%u)\n",
-                                (unsigned long)len, rssi, radio->getRxTotal());
-            chunk_output(arg, frame_buffer, len);
-            arg->serial->println("**DONE");
-            #endif
 
             bl_stat = !bl_stat;
             digitalWrite(LED_BLUE, bl_stat);
 
-            // Restart RX for next frame
+            // Copy frame to output buffer and signal the output thread.
+            // memcpy ~70KB SPIRAM→SPIRAM is ~100μs, way faster than serial output.
+            memcpy(output_buffer, frame_buffer, len);
+            output_len = len;
+            xSemaphoreGive(output_sem);
+
+            // Restart RX immediately - don't wait for output to finish
             radio->startRx(frame_buffer, FRAME_SIZE_BYTES);
         }
 
@@ -123,7 +142,9 @@ static void receive_thread(EAGLESystems* arg) {
     sys.serial->printf("[eagle] SI4463 pins: CS=%d SDN=%d INT=%d\n", SI4463_CS, SI4463_SDN, SI4463_INT);
     #endif
 
-    frame_buffer = (uint8_t *)heap_caps_malloc(FRAME_SIZE_BYTES, MALLOC_CAP_SPIRAM);
+    frame_buffer  = (uint8_t *)heap_caps_malloc(FRAME_SIZE_BYTES, MALLOC_CAP_SPIRAM);
+    output_buffer = (uint8_t *)heap_caps_malloc(FRAME_SIZE_BYTES, MALLOC_CAP_SPIRAM);
+    output_sem    = xSemaphoreCreateBinary();
 
     // Init radio
     CAMRadioStatus radio_status = sys.radio.init(SPI);
@@ -141,7 +162,11 @@ static void receive_thread(EAGLESystems* arg) {
     sys.serial->println("[eagle] Radio init OK");
     #endif
 
+    // Receive thread on core 0 - high priority, never blocks on serial
     xTaskCreatePinnedToCore((TaskFunction_t) receive_thread, "rxt", THREAD_STACK_SIZE_DEFAULT * 2, &sys, 7, nullptr, 0);
+
+    // Output thread on core 1 - handles slow serial output without blocking RX
+    xTaskCreatePinnedToCore((TaskFunction_t) output_thread, "txout", THREAD_STACK_SIZE_DEFAULT * 2, &sys, 5, nullptr, 1);
 
     digitalWrite(LED_ORANGE, LOW);
     digitalWrite(LED_GREEN, HIGH);

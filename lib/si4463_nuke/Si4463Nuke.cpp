@@ -269,7 +269,11 @@ bool Si4463Nuke::begin(Si4463Pins pins) {
     _rxFragsRcvd = 0;
     _rxFrameId   = 0xFF;
     _rssi        = -134;
+    _rxLastFragMs = 0;
     _frameIdGen  = 0;
+    _rxPollHits     = 0;
+    _rxFrameResets  = 0;
+    _rxCrcFail      = 0;
 
     // Pin setup
     pinMode(_pins.cs, OUTPUT);
@@ -302,6 +306,27 @@ bool Si4463Nuke::begin(Si4463Pins pins) {
 
 void Si4463Nuke::setTxPower(uint8_t level) {
     setProp(0x22, 1, 0x01, &level);
+}
+
+// ============================================================================
+// Header CRC-8 (polynomial 0x31, init 0xFF)
+// Protects the 8-byte fragment header from corruption.
+// Without hardware CRC on the WDS config, corrupt packets would
+// reset reassembly with random frameIds, making frame completion impossible.
+// ============================================================================
+
+static uint8_t headerCRC8(const uint8_t* hdr) {
+    // CRC-8/MAXIM over bytes 0,2,3,4,5,6,7 (skip byte 1 = CRC slot)
+    uint8_t crc = 0xFF;
+    for (uint8_t i = 0; i < SI4463_FRAG_HDR; i++) {
+        if (i == 1) continue;  // skip CRC byte itself
+        crc ^= hdr[i];
+        for (uint8_t b = 0; b < 8; b++) {
+            if (crc & 0x80) crc = (crc << 1) ^ 0x31;
+            else crc <<= 1;
+        }
+    }
+    return crc;
 }
 
 // ============================================================================
@@ -342,13 +367,14 @@ void Si4463Nuke::sendFragment(uint16_t idx) {
 
     // 8-byte fragment header
     pkt[0] = _txFrameId;
-    pkt[1] = 0x00;                        // reserved
+    pkt[1] = 0x00;                        // CRC slot (computed below)
     pkt[2] = (idx >> 8) & 0xFF;           // fragment index MSB
     pkt[3] = idx & 0xFF;                  // fragment index LSB
     pkt[4] = (_txLen >> 24) & 0xFF;       // total size MSB
     pkt[5] = (_txLen >> 16) & 0xFF;
     pkt[6] = (_txLen >> 8)  & 0xFF;
     pkt[7] = _txLen & 0xFF;              // total size LSB
+    pkt[1] = headerCRC8(pkt);             // CRC-8 of header
 
     // Copy payload (last fragment may be shorter, rest stays zero-padded)
     uint32_t offset    = (uint32_t)idx * SI4463_FRAG_DATA;
@@ -357,9 +383,12 @@ void Si4463Nuke::sendFragment(uint16_t idx) {
                          ? SI4463_FRAG_DATA : (uint16_t)remaining;
     memcpy(pkt + SI4463_FRAG_HDR, _txData + offset, payLen);
 
-    // Reset TX FIFO and clear pending interrupts
-    clearFifo(true, false);
-    clearInterrupts();
+    // Reset TX FIFO only (skip clearInterrupts - saves one CTS round trip).
+    // FIFO_INFO with TX reset flag, no response needed.
+    {
+        uint8_t fifoCmd[2] = {CMD_FIFO_INFO, 0x01};
+        sendCmd(fifoCmd, 2);
+    }
 
     // Write entire packet to FIFO (fits in 129-byte shared FIFO)
     writeFifo(pkt, SI4463_PACKET_SIZE);
@@ -379,35 +408,30 @@ void Si4463Nuke::sendFragment(uint16_t idx) {
 }
 
 void Si4463Nuke::pollTxDone() {
-    // Read FRR_A (PH_PEND) - fastest way to check PACKET_SENT
-    uint8_t phPend = readFRR(0);
+    // Read all FRRs in single transaction
+    uint8_t frr[4];
+    readFRRAll(frr);
 
+    uint8_t phPend    = frr[0];
+    uint8_t chipState = frr[1] & 0x0F;
+
+    bool txDone = false;
     if (phPend & PH_PACKET_SENT) {
-        clearInterrupts();
-        _txWaiting = false;
-
-        _txFragIndex++;
-        if (_txFragIndex < _txFragTotal) {
-            sendFragment(_txFragIndex);
-        } else {
-            _txActive = false;
-            _txData   = nullptr;
-        }
-        return;
+        txDone = true;
+    } else if (chipState == SI_READY || chipState == SI_READY2) {
+        // Chip is done transmitting but FRR was cleared. Accept it.
+        txDone = true;
     }
 
-    // Also check chip state - if back to READY without PACKET_SENT flag,
-    // the FRR might have been cleared. Accept it.
-    uint8_t chipState = readFRR(1) & 0x0F;
-    if (chipState == SI_READY || chipState == SI_READY2) {
-        // Chip is done transmitting. Check if we missed the PACKET_SENT.
-        // This can happen if clearInterrupts was called between the event
-        // and our FRR read. Accept it and move on.
+    if (txDone) {
         clearInterrupts();
         _txWaiting = false;
 
         _txFragIndex++;
         if (_txFragIndex < _txFragTotal) {
+            // Inter-fragment pacing: give the receiver time to read FIFO
+            // and re-enter RX mode.
+            delayMicroseconds(2000);
             sendFragment(_txFragIndex);
         } else {
             _txActive = false;
@@ -443,6 +467,11 @@ void Si4463Nuke::startRx(uint8_t* buf, uint32_t bufLen) {
     _rxActive    = true;
     _txActive    = false; // half-duplex
 
+    // Note: intentionally NOT zeroing the buffer. During chunk_output,
+    // the receive thread blocks and misses the start of the next frame.
+    // Stale data from previous frames is better than zeros for JPEG decode
+    // since consecutive video frames are visually similar.
+
     enterRx();
 }
 
@@ -467,54 +496,90 @@ void Si4463Nuke::enterRx() {
 }
 
 void Si4463Nuke::pollRxDone() {
-    // Read FRR_A (PH_PEND) for PACKET_RX
-    uint8_t phPend = readFRR(0);
+    // Read all 4 FRRs in a single SPI transaction (fastest check)
+    uint8_t frr[4];
+    readFRRAll(frr);
 
+    uint8_t phPend = frr[0];
+
+    // ONLY trigger on PH_PACKET_RX flag. Do NOT use chip state as fallback.
+    // After START_RX, the chip briefly stays in READY while transitioning
+    // to RX_TUNE→RX. Using chip state as fallback would cause us to
+    // read an empty FIFO (garbage) and double-count every packet.
     if (!(phPend & PH_PACKET_RX)) {
-        // Also check: chip went to READY (valid packet received)
-        uint8_t chipState = readFRR(1) & 0x0F;
-        if (chipState != SI_READY && chipState != SI_READY2) {
-            return; // still in RX, nothing yet
-        }
-        // Chip is in READY but no PH flag - might have been cleared.
-        // Fall through to read FIFO anyway.
+        return;
     }
 
-    // Read RSSI from FRR_C (LATCHED_RSSI)
-    uint8_t rssiRaw = readFRR(2);
-    _rssi = (int)rssiRaw / 2 - 134;
+    // RSSI from FRR_C (already read above)
+    _rssi = (int)frr[2] / 2 - 134;
 
-    // Read full packet from RX FIFO
+    _rxPollHits++;
+
+    // --- CRITICAL HOT PATH: minimize time before re-entering RX ---
+    // The TX sends fragments back-to-back. Every microsecond we spend
+    // NOT in RX mode is a fragment we might miss.
+
+    // 1. Read FIFO (no CTS wait - instant)
     uint8_t pkt[SI4463_PACKET_SIZE];
     readFifo(pkt, SI4463_PACKET_SIZE);
 
-    // Clear interrupts
+    // 2. Clear interrupts FIRST (while chip is in READY, before START_RX).
+    //    This ensures PH_PEND flags are clean for the next packet detection.
     clearInterrupts();
 
-    // Process the fragment
+    // 3. Reset RX FIFO (fast path - sendCmd, skip response read).
+    //    Shared FIFO mode may need explicit reset even after full read.
+    {
+        uint8_t fifoCmd[2] = {CMD_FIFO_INFO, 0x02};
+        sendCmd(fifoCmd, 2);
+    }
+
+    // 4. START_RX - re-enter receive mode
+    {
+        uint8_t cmd[8] = {
+            CMD_START_RX,
+            _channel,
+            0x00,        // condition: start immediately
+            0x00, 0x00,  // RX_LEN = 0 (use WDS field config)
+            SI_RX,       // RXTIMEOUT_STATE  = RX
+            SI_READY,    // RXVALID_STATE    = READY
+            SI_RX        // RXINVALID_STATE  = RX
+        };
+        sendCmd(cmd, 8);
+    }
+
+    // 5. Process the fragment at leisure (memcpy to output buffer)
     processFragment(pkt);
 
-    // Re-enter RX for next fragment (unless message is complete)
-    if (_rxActive && !_rxAvail) {
-        enterRx();
-    }
+    // If reassembly is complete, stop RX
+    // (processFragment sets _rxAvail=true and _rxActive=false)
 }
 
 void Si4463Nuke::processFragment(const uint8_t* pkt) {
+    // Verify header CRC-8 before trusting any header fields.
+    // Without this, corrupt packets with random frameIds constantly
+    // reset reassembly, making frame completion impossible.
+    {
+        uint8_t expected = pkt[1];
+        uint8_t computed = headerCRC8(pkt);
+        if (computed != expected) { _rxCrcFail++; return; }
+    }
+
     // Parse 8-byte header
     uint8_t  frameId  = pkt[0];
-    // pkt[1] reserved
     uint16_t fragIdx  = ((uint16_t)pkt[2] << 8) | pkt[3];
     uint32_t totalSz  = ((uint32_t)pkt[4] << 24) | ((uint32_t)pkt[5] << 16) |
                          ((uint32_t)pkt[6] << 8)  | (uint32_t)pkt[7];
 
-    // Sanity check
-    if (totalSz == 0) return;
+    // Sanity checks
+    if (totalSz == 0 || totalSz > _rxBufLen) return;
 
     uint16_t expectedFrags = (totalSz + SI4463_FRAG_DATA - 1) / SI4463_FRAG_DATA;
+    if (fragIdx >= expectedFrags) return;
 
     // New frame? Reset reassembly.
     if (frameId != _rxFrameId) {
+        if (_rxFrameId != 0xFF) _rxFrameResets++;
         _rxFrameId   = frameId;
         _rxFragTotal = expectedFrags;
         _rxFragsRcvd = 0;
@@ -533,6 +598,7 @@ void Si4463Nuke::processFragment(const uint8_t* pkt) {
     if (_rxBuf && dstOffset + payLen <= _rxBufLen) {
         memcpy(_rxBuf + dstOffset, pkt + SI4463_FRAG_HDR, payLen);
         _rxFragsRcvd++;
+        _rxLastFragMs = millis();
     }
 
     // Check completion
@@ -553,6 +619,16 @@ void Si4463Nuke::update() {
     }
     if (_rxActive) {
         pollRxDone();
+
+        // Timeout: if we've received at least one fragment but nothing
+        // new for 150ms, the TX has moved on to the next frame.
+        // Accept whatever we have - ~92% of a JPEG is still viewable.
+        if (_rxFragsRcvd > 0 && !_rxAvail &&
+            millis() - _rxLastFragMs > 150) {
+            _rxAvail  = true;
+            _rxActive = false;
+            if (_rxTotalSize > _rxBufLen) _rxTotalSize = _rxBufLen;
+        }
     }
 }
 
@@ -600,12 +676,15 @@ void Si4463Nuke::printDebug(Print& out) {
         case 0x08: s = "RX";         break;
     }
 
-    out.printf("[nuke] chip=%s(0x%02X) ph=0x%02X mdm=0x%02X "
-               "rssi=%d/%ddBm tx=%d(%u/%u) rx=%d(%u/%u)\n",
-               s, chipState, phPend, modemPend,
-               rssi, currRssi,
-               _txActive, _txFragIndex, _txFragTotal,
-               _rxActive, _rxFragsRcvd, _rxFragTotal);
+    // out.printf("[nuke] chip=%s(0x%02X) ph=0x%02X mdm=0x%02X "
+    //            "rssi=%d/%ddBm tx=%d(%u/%u) rx=%d(%u/%u) "
+    //            "hits=%lu resets=%lu crcfail=%lu\n",
+    //            s, chipState, phPend, modemPend,
+    //            rssi, currRssi,
+    //            _txActive, _txFragIndex, _txFragTotal,
+    //            _rxActive, _rxFragsRcvd, _rxFragTotal,
+    //            (unsigned long)_rxPollHits, (unsigned long)_rxFrameResets,
+    //            (unsigned long)_rxCrcFail);
 }
 
 void Si4463Nuke::printConfig(Print& out) {
