@@ -19,6 +19,9 @@ import queue
 import threading
 import time
 
+
+import logging
+
 import io
 import serial
 import numpy as np
@@ -31,7 +34,7 @@ try:
     HAS_DISPLAY = True
 except ImportError:
     HAS_DISPLAY = False
-PORT = "COM13"
+PORT = "COM4"
 
 BAUD = 115200
 
@@ -39,6 +42,20 @@ OUTPUT_SINGLE = "output.jpg"
 OUTPUT_STREAM = "output_stream.mjpg"
 
 PREVIEW_WINDOW = "JPEG Preview"
+
+
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler("serial_log.txt"),  # logs to file
+        logging.StreamHandler()                  # still prints to console
+    ]
+)
+log = logging.getLogger(__name__)
+
 
 
 # ------------------------------------------------------------
@@ -84,7 +101,7 @@ def decode_jpeg(jpeg_bytes: bytes):
         return img
     except Exception as e:
         print(f"  Pillow decode failed: {e}")
-
+        log.info(f"Pillow decode failed: {e}")
     # Fallback to OpenCV
     arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
     return cv2.imdecode(arr, cv2.IMREAD_COLOR)
@@ -104,16 +121,22 @@ def serial_worker(ser, frame_queue, stop_event):
         while not stop_event.is_set():
 
             line = ser.readline().decode("utf-8", errors="ignore").strip()
-            print(f"< {line}")
+            # print(f"< {line}")
+            log.info(f"Got line: {line}")
+
 
             if line.startswith("*FRAME"):
                 parts = line.split()
                 if len(parts) < 2:
-                    print("Got *FRAME with no size, skipping")
+                    # print("Got *FRAME with no size, skipping")
+                    log.info("Got *FRAME with no size, skipping")
+
                     continue
 
                 frame_size = int(parts[1])
-                print(f"Got *FRAME, expecting {frame_size} bytes")
+                # print(f"Got *FRAME, expecting {frame_size} bytes")
+                log.info(f"Got *FRAME, expecting {frame_size} bytes")
+
 
                 # Read exactly frame_size bytes
                 buffer = bytearray()
@@ -125,7 +148,9 @@ def serial_worker(ser, frame_queue, stop_event):
                     buffer.extend(chunk)
                     remaining -= len(chunk)
 
-                print(f"Received {len(buffer)} / {frame_size} bytes")
+                # print(f"Received {len(buffer)} / {frame_size} bytes")
+                log.info(f"Received {len(buffer)} / {frame_size} bytes")
+
 
                 # Read until **DONE
                 while True:
@@ -134,16 +159,25 @@ def serial_worker(ser, frame_queue, stop_event):
                         break
 
                 jpeg = bytes(buffer)
+                with open(f"frame_raw_{frame_count:04d}.bin", "wb") as f:
+                    f.write(jpeg)
 
                 # Diagnostic: raw buffer start
-                print(f"Raw first 16 bytes: {jpeg[:16].hex(' ')}")
+                # print(f"Raw first 16 bytes: {jpeg[:16].hex(' ')}")
+                log.info(f"Raw first 16 bytes: {jpeg[:16].hex(' ')}")
+                log.info(f"Got *FRAME, expecting {frame_size} bytes")
+
 
                 # If JPEG should start at byte 0 but doesn't, the data is corrupted from the start
                 if jpeg[:2] != b"\xff\xd8":
-                    print(f"WARNING: buffer does NOT start with FF D8 — data is corrupt or mis-framed")
+                    # print(f"WARNING: buffer does NOT start with FF D8 — data is corrupt or mis-framed")
+                    log.info(f"WARNING: buffer does NOT start with FF D8 — data is corrupt or mis-framed")
+
 
                 frame_count += 1
-                print(f"Frame {frame_count}: {len(jpeg)} bytes")
+                # print(f"Frame {frame_count}: {len(jpeg)} bytes")
+                log.info(f"Frame {frame_count}: {len(jpeg)} bytes")
+
 
                 # Save raw buffer as-is (don't trim — let us inspect the actual data)
                 with open(OUTPUT_SINGLE, "wb") as f:
@@ -163,11 +197,16 @@ def serial_worker(ser, frame_queue, stop_event):
                         pass
 
     except Exception as e:
-        print("Serial error:", e)
+        # print("Serial error:", e)
+        log.info(f"Serial error: {e}")
+        log.info(f"Frame {frame_count}: {len(jpeg) if 'jpeg' in locals() else 0} bytes")
+
 
     finally:
         stream_file.close()
-        print("Stopped.")
+        # print("Stopped.")
+        log.info(f"Serial worker stopped after {frame_count} frames")
+
 
 
 # ------------------------------------------------------------
@@ -179,7 +218,9 @@ def main():
     parser = argparse.ArgumentParser(description="Read JPEG stream from ESP32")
     args = parser.parse_args()
 
-    print(f"Opening {PORT} @ {BAUD}")
+    # print(f"Opening {PORT} @ {BAUD}")
+    log.info(f"Opening {PORT} @ {BAUD}")
+
     ser = serial.Serial(PORT, BAUD)
 
     frame_queue = queue.Queue(maxsize=2)
@@ -195,6 +236,7 @@ def main():
     if HAS_DISPLAY:
         cv2.namedWindow(PREVIEW_WINDOW, cv2.WINDOW_NORMAL)
         print("Press 'q' in preview window to quit.")
+
     else:
         print("Install opencv-python for live preview.")
 
@@ -217,7 +259,9 @@ def main():
                     if img is not None:
                         last_img = img
                     else:
-                        print(f"cv2.imdecode FAILED for {len(chunk)} byte frame (first 4: {chunk[:4].hex(' ')})")
+                        # print(f"cv2.imdecode FAILED for {len(chunk)} byte frame (first 4: {chunk[:4].hex(' ')})")
+                        log.info(f"cv2.imdecode FAILED for {len(chunk)} byte frame (first 4: {chunk[:4].hex(' ')})")
+
 
                 if last_img is not None:
                     cv2.imshow(PREVIEW_WINDOW, last_img)

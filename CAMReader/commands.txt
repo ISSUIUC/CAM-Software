@@ -1,0 +1,13 @@
+python CAMReader/read_jpeg_stream.py
+
+
+python -m serial.tools.list_ports
+
+
+
+
+
+
+
+
+
