@@ -22,7 +22,7 @@ class jpeg_encoder {
         .width = 720,
         .src_type = JPEG_ENCODE_IN_FORMAT_YUV422,
         .sub_sample = JPEG_DOWN_SAMPLING_YUV422, // this works for some reason
-        .image_quality = 40,
+        .image_quality = 20,
     };
 
     jpeg_encode_memory_alloc_cfg_t mem_cfg_output = {

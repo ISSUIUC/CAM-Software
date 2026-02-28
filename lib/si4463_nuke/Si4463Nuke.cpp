@@ -354,6 +354,7 @@ bool Si4463Nuke::tx(const uint8_t* data, uint32_t len) {
     _txFrameId   = ++_frameIdGen;
     _txActive    = true;
     _txWaiting   = false;
+    _txSendCount = 1; // first fragment sent by sendFragment(0) below
     _rxActive    = false; // half-duplex: stop RX
 
     sendFragment(0);
@@ -427,15 +428,22 @@ void Si4463Nuke::pollTxDone() {
         clearInterrupts();
         _txWaiting = false;
 
-        _txFragIndex++;
-        if (_txFragIndex < _txFragTotal) {
-            // Inter-fragment pacing: give the receiver time to read FIFO
-            // and re-enter RX mode.
+        if (_txSendCount < 4) {
+            // Resend same fragment for redundancy
+            _txSendCount++;
             delayMicroseconds(2000);
             sendFragment(_txFragIndex);
         } else {
-            _txActive = false;
-            _txData   = nullptr;
+            // All copies sent — advance to next fragment
+            _txSendCount = 1;
+            _txFragIndex++;
+            if (_txFragIndex < _txFragTotal) {
+                delayMicroseconds(2000);
+                sendFragment(_txFragIndex);
+            } else {
+                _txActive = false;
+                _txData   = nullptr;
+            }
         }
         return;
     }
@@ -465,6 +473,7 @@ void Si4463Nuke::startRx(uint8_t* buf, uint32_t bufLen) {
     _rxFrameId   = 0xFF;
     _rxAvail     = false;
     _rxActive    = true;
+    memset(_rxRecvBits, 0, sizeof(_rxRecvBits));
     _txActive    = false; // half-duplex
 
     // Note: intentionally NOT zeroing the buffer. During chunk_output,
@@ -584,6 +593,14 @@ void Si4463Nuke::processFragment(const uint8_t* pkt) {
         _rxFragTotal = expectedFrags;
         _rxFragsRcvd = 0;
         _rxTotalSize = totalSz;
+        memset(_rxRecvBits, 0, sizeof(_rxRecvBits));
+    }
+
+    // Deduplicate: skip if we already received this fragment index
+    uint16_t bitIdx = fragIdx / 8;
+    uint8_t  bitMsk = 1 << (fragIdx % 8);
+    if (bitIdx < sizeof(_rxRecvBits) && (_rxRecvBits[bitIdx] & bitMsk)) {
+        return; // duplicate — already have this fragment
     }
 
     // Compute actual payload length for this fragment
@@ -597,6 +614,7 @@ void Si4463Nuke::processFragment(const uint8_t* pkt) {
     // Bounds check and copy to output buffer
     if (_rxBuf && dstOffset + payLen <= _rxBufLen) {
         memcpy(_rxBuf + dstOffset, pkt + SI4463_FRAG_HDR, payLen);
+        if (bitIdx < sizeof(_rxRecvBits)) _rxRecvBits[bitIdx] |= bitMsk;
         _rxFragsRcvd++;
         _rxLastFragMs = millis();
     }

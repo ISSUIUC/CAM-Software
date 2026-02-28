@@ -136,6 +136,7 @@ private:
     // ---- TX state ----
     bool           _txActive;
     bool           _txWaiting;     // waiting for PACKET_SENT
+    uint8_t        _txSendCount;   // how many times current fragment has been sent
     const uint8_t* _txData;
     uint32_t       _txLen;
     uint16_t       _txFragIndex;
@@ -154,6 +155,7 @@ private:
     uint8_t  _rxFrameId;
     int      _rssi;
     uint32_t _rxLastFragMs;  // millis() of last valid fragment received
+    uint8_t  _rxRecvBits[128]; // bitfield: tracks which fragments received (up to 1024)
 
     // ---- Shared ----
     uint8_t  _frameIdGen;
