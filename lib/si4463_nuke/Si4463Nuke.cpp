@@ -277,6 +277,10 @@ bool Si4463Nuke::begin(Si4463Pins pins) {
     _rxPollHits     = 0;
     _rxFrameResets  = 0;
     _rxCrcFail      = 0;
+    _rsLastMissing  = 0;
+    _rsLastRecovered = 0;
+    _rsLastResult   = 0;
+    _rsSelfTest     = (int8_t)rsSelfTest();
 
     // Pin setup
     pinMode(_pins.cs, OUTPUT);
@@ -702,12 +706,26 @@ void Si4463Nuke::update() {
 }
 
 void Si4463Nuke::rsFinishDecode() {
-    if (!_parityBuf || !_rxBuf) return;
-    if (_rxDataFragsRcvd >= _rsLayout.dataFrags) return; // all data received
+    if (!_parityBuf || !_rxBuf) {
+        _rsLastMissing = 0;
+        _rsLastRecovered = 0;
+        _rsLastResult = 3; // no buf
+        return;
+    }
+    if (_rxDataFragsRcvd >= _rsLayout.dataFrags) {
+        _rsLastMissing = 0;
+        _rsLastRecovered = 0;
+        _rsLastResult = 0; // no recovery needed
+        return;
+    }
 
-    rsDecode(_rxBuf, _rxTotalSize, _parityBuf,
+    _rsLastMissing = _rsLayout.dataFrags - _rxDataFragsRcvd;
+
+    _rsLastRecovered = rsDecode(_rxBuf, _rxTotalSize, _parityBuf,
              _rxRecvBits, sizeof(_rxRecvBits),
              _rsLayout, SI4463_FRAG_USABLE);
+
+    _rsLastResult = (_rsLastRecovered > 0) ? 1 : 2;
 }
 
 bool Si4463Nuke::available() {
@@ -754,15 +772,22 @@ void Si4463Nuke::printDebug(Print& out) {
         case 0x08: s = "RX";         break;
     }
 
-    // out.printf("[nuke] chip=%s(0x%02X) ph=0x%02X mdm=0x%02X "
-    //            "rssi=%d/%ddBm tx=%d(%u/%u) rx=%d(%u/%u) "
-    //            "hits=%lu resets=%lu crcfail=%lu\n",
-    //            s, chipState, phPend, modemPend,
-    //            rssi, currRssi,
-    //            _txActive, _txFragIndex, _txFragTotal,
-    //            _rxActive, _rxFragsRcvd, _rxFragTotal,
-    //            (unsigned long)_rxPollHits, (unsigned long)_rxFrameResets,
-    //            (unsigned long)_rxCrcFail);
+    const char* rsStr = "?";
+    switch (_rsLastResult) {
+        case 0: rsStr = "ok";      break;
+        case 1: rsStr = "fixed";   break;
+        case 2: rsStr = "FAIL";    break;
+        case 3: rsStr = "no-buf";  break;
+    }
+
+    out.printf("[nuke] chip=%s rssi=%d/%ddBm rx=%u/%u hits=%lu crc=%lu "
+               "rs=%s miss=%u recov=%u selftest=%d\n",
+               s, rssi, currRssi,
+               _rxFragsRcvd, _rxFragTotal,
+               (unsigned long)_rxPollHits,
+               (unsigned long)_rxCrcFail,
+               rsStr, _rsLastMissing, _rsLastRecovered,
+               _rsSelfTest);
 }
 
 void Si4463Nuke::printConfig(Print& out) {

@@ -8,6 +8,60 @@
 
 static_assert(RS_DATA_SHARDS + RS_PARITY_SHARDS <= 255, "Block size exceeds GF(2^8)");
 
+// Returns 0 on success, negative on failure.
+static int rsSelfTest() {
+    RS::ReedSolomon<RS_DATA_SHARDS, RS_PARITY_SHARDS> rs;
+    uint8_t msg[RS_DATA_SHARDS];
+    uint8_t ecc[RS_PARITY_SHARDS];
+    uint8_t corrupted[RS_DATA_SHARDS];
+    uint8_t decoded[RS_DATA_SHARDS];
+
+    // Fill with known pattern
+    for (int i = 0; i < RS_DATA_SHARDS; i++) msg[i] = (uint8_t)(i * 7 + 3);
+    rs.EncodeBlock(msg, ecc);
+
+    // Test 1: Clean decode (no errors) via Decode on combined buffer
+    {
+        uint8_t codeword[RS_DATA_SHARDS + RS_PARITY_SHARDS];
+        memcpy(codeword, msg, RS_DATA_SHARDS);
+        memcpy(codeword + RS_DATA_SHARDS, ecc, RS_PARITY_SHARDS);
+        int ret = rs.Decode(codeword, decoded);
+        if (ret != 0) return -1; // clean decode failed
+        for (int i = 0; i < RS_DATA_SHARDS; i++)
+            if (decoded[i] != msg[i]) return -2;
+    }
+
+    // Test 2: 30 erasures (known positions) — full erasure correction
+    {
+        memcpy(corrupted, msg, RS_DATA_SHARDS);
+        uint8_t erase_pos[30];
+        for (int i = 0; i < 30; i++) {
+            erase_pos[i] = (uint8_t)(i * 6);
+            corrupted[erase_pos[i]] = 0;
+        }
+        int ret = rs.DecodeBlock(corrupted, ecc, decoded, erase_pos, 30);
+        if (ret != 0) return -100 - ret;
+        for (int i = 0; i < RS_DATA_SHARDS; i++)
+            if (decoded[i] != msg[i]) return -4;
+    }
+
+    // Test 3: 63 erasures (max capacity) — stress test
+    {
+        memcpy(corrupted, msg, RS_DATA_SHARDS);
+        uint8_t erase_pos[63];
+        for (int i = 0; i < 63; i++) {
+            erase_pos[i] = (uint8_t)(i * 3);
+            corrupted[erase_pos[i]] = 0;
+        }
+        int ret = rs.DecodeBlock(corrupted, ecc, decoded, erase_pos, 63);
+        if (ret != 0) return -200 - ret;
+        for (int i = 0; i < RS_DATA_SHARDS; i++)
+            if (decoded[i] != msg[i]) return -5;
+    }
+
+    return 0;
+}
+
 struct RSLayout {
     uint16_t dataFrags;
     uint16_t numBlocks;
@@ -110,9 +164,10 @@ static uint16_t rsDecode(uint8_t* dataBuf, uint32_t dataLen,
         }
 
         if (dataEraseCount == 0) continue;
+        // Erasure correction: each known erasure costs 1 parity symbol
         if (eraseCount > RS_PARITY_SHARDS) continue;
 
-        // Decode each byte position
+        // Decode each byte position with known erasure positions
         bool blockOk = true;
         for (uint16_t bp = 0; bp < fragUsable; bp++) {
             memset(msg, 0, RS_DATA_SHARDS);
@@ -134,7 +189,10 @@ static uint16_t rsDecode(uint8_t* dataBuf, uint32_t dataLen,
             }
 
             int ret = rs.DecodeBlock(msg, ecc, decoded, erasures, eraseCount);
-            if (ret != 0) { blockOk = false; break; }
+            if (ret != 0) {
+                blockOk = false;
+                break;
+            }
 
             // Write recovered data symbols back
             for (uint8_t e = 0; e < dataEraseCount; e++) {

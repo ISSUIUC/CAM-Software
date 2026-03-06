@@ -183,4 +183,10 @@ private:
     uint32_t _rxPollHits;      // total fragments detected (across all frames)
     uint32_t _rxFrameResets;   // times reassembly was reset by new frameId
     uint32_t _rxCrcFail;       // packets rejected by header CRC
+
+    // ---- RS debug (last frame) ----
+    uint16_t _rsLastMissing;   // data frags missing before RS
+    uint16_t _rsLastRecovered; // data frags recovered by RS
+    uint8_t  _rsLastResult;    // 0=no recovery needed, 1=recovered, 2=failed, 3=no buf
+    int8_t   _rsSelfTest;      // 0=pass, <0=fail code
 };

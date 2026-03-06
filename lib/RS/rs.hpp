@@ -28,7 +28,7 @@ class ReedSolomon {
 public:
     ReedSolomon() {
         const uint8_t   enc_len  = msg_length + ecc_length;
-        const uint8_t   poly_len = ecc_length * 2;
+        const uint8_t   poly_len = ecc_length * 2 + 2;
         uint8_t** memptr   = &memory;
         uint16_t  offset   = 0;
 
@@ -70,7 +70,8 @@ public:
         static bool    generator_cached = false;
 
         /* Allocating memory on stack for polynomials storage */
-        uint8_t stack_memory[MSG_CNT * msg_length + POLY_CNT * ecc_length * 2];
+        const uint16_t enc_len_alloc = msg_length + ecc_length;
+        uint8_t stack_memory[MSG_CNT * enc_len_alloc + POLY_CNT * (ecc_length * 2 + 2)];
         this->memory = stack_memory;
 
         const uint8_t* src_ptr = (const uint8_t*) src;
@@ -146,7 +147,8 @@ public:
         bool ok;
 
         /* Allocation memory on stack */
-        uint8_t stack_memory[MSG_CNT * msg_length + POLY_CNT * ecc_length * 2];
+        const uint16_t enc_len_alloc = msg_length + ecc_length;
+        uint8_t stack_memory[MSG_CNT * enc_len_alloc + POLY_CNT * (ecc_length * 2 + 2)];
         this->memory = stack_memory;
 
         Poly *msg_in  = &polynoms[ID_MSG_IN];
@@ -169,7 +171,7 @@ public:
         }
 
         // Too many errors
-        if(epos->length > ecc_length) return 1;
+        if(epos->length > ecc_length) return 10;
 
         Poly *synd   = &polynoms[ID_SYNDROMES];
         Poly *eloc   = &polynoms[ID_ERRORS_LOC];
@@ -192,11 +194,18 @@ public:
         // Going to exit if no errors
         if(!has_errors) goto return_corrected_msg;
 
+        // If we have known erasure positions, correct them directly
+        // using syndromes + Forney formula (bypasses broken BM/Chien path)
+        if(epos->length > 0) {
+            CorrectErrata(synd, epos, msg_in);
+            goto return_corrected_msg;
+        }
+
+        // Unknown error path: find error positions via BM + Chien search
         CalcForneySyndromes(synd, epos, src_len);
         FindErrorLocator(forney, NULL, epos->length);
 
         // Reversing syndrome
-        // TODO optimize through special Poly flag
         reloc->length = eloc->length;
         for(int8_t i = eloc->length-1, j = 0; i >= 0; i--, j++){
             reloc->at(j) = eloc->at(i);
@@ -204,10 +213,9 @@ public:
 
         // Find errors
         ok = FindErrors(reloc, src_len);
-        if(!ok) return 1;
+        if(!ok) return 20;
 
-        // Error happened while finding errors (so helpful :D)
-        if(err->length == 0) return 1;
+        if(err->length == 0) return 30;
 
         /* Adding found errors with known */
         for(uint8_t i = 0; i < err->length; i++) {

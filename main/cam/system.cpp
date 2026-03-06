@@ -320,6 +320,9 @@ static void comm_thread(CAMSystems* arg) {
         while(1) {};
     }
 
+    sys.cameras.cam1.set_state(CAM_STATE_ON);
+    // sys.cameras.cam2.set_state(CAM_STATE_ON);
+
     xTaskCreatePinnedToCore((TaskFunction_t) cmd_thread, "cmdq", THREAD_STACK_SIZE_DEFAULT, &sys, 10, nullptr, CORE_0);
     xTaskCreatePinnedToCore((TaskFunction_t) poll_thread, "poll", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, CORE_0);
     xTaskCreatePinnedToCore((TaskFunction_t) comm_thread, "comm", THREAD_STACK_SIZE_DEFAULT, &sys, 8, nullptr, CORE_0);
