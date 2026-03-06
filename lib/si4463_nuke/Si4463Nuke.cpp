@@ -270,6 +270,9 @@ bool Si4463Nuke::begin(Si4463Pins pins) {
     _rxFrameId   = 0xFF;
     _rssi        = -134;
     _rxLastFragMs = 0;
+    _parityBuf = (uint8_t*)heap_caps_malloc(RS_PARITY_BUF_SIZE, MALLOC_CAP_SPIRAM);
+    _rxDataFragsRcvd = 0;
+    memset(&_rsLayout, 0, sizeof(_rsLayout));
     _frameIdGen  = 0;
     _rxPollHits     = 0;
     _rxFrameResets  = 0;
@@ -308,12 +311,15 @@ void Si4463Nuke::setTxPower(uint8_t level) {
     setProp(0x22, 1, 0x01, &level);
 }
 
-// ============================================================================
-// Header CRC-8 (polynomial 0x31, init 0xFF)
-// Protects the 8-byte fragment header from corruption.
-// Without hardware CRC on the WDS config, corrupt packets would
-// reset reassembly with random frameIds, making frame completion impossible.
-// ============================================================================
+uint16_t Si4463Nuke::crc16(const uint8_t* data, uint16_t len) {
+    uint16_t crc = 0xFFFF;
+    for (uint16_t i = 0; i < len; i++) {
+        crc ^= (uint16_t)data[i] << 8;
+        for (uint8_t b = 0; b < 8; b++)
+            crc = (crc & 0x8000) ? (crc << 1) ^ 0x1021 : crc << 1;
+    }
+    return crc;
+}
 
 static uint8_t headerCRC8(const uint8_t* hdr) {
     // CRC-8/MAXIM over bytes 0,2,3,4,5,6,7 (skip byte 1 = CRC slot)
@@ -340,21 +346,28 @@ bool Si4463Nuke::tx(const uint8_t* data, uint32_t len) {
     }
     if (len == 0) return false;
 
-    // Calculate fragment count
-    uint32_t frags = (len + SI4463_FRAG_DATA - 1) / SI4463_FRAG_DATA;
-    if (frags > 65535) {
+    // Compute RS block layout
+    _rsLayout.compute(len, SI4463_FRAG_USABLE);
+    if (_rsLayout.totalFrags > 65535) {
         _lastErr = SI_ERR_TOO_LARGE;
         return false;
     }
 
+    // Compute parity into pre-allocated PSRAM buffer
+    if (!_parityBuf) {
+        _lastErr = SI_ERR_TOO_LARGE;
+        return false;
+    }
+    memset(_parityBuf, 0, RS_PARITY_BUF_SIZE);
+    rsEncode(data, len, _parityBuf, _rsLayout, SI4463_FRAG_USABLE);
+
     _txData      = data;
     _txLen       = len;
-    _txFragTotal = (uint16_t)frags;
+    _txFragTotal = _rsLayout.totalFrags;
     _txFragIndex = 0;
     _txFrameId   = ++_frameIdGen;
     _txActive    = true;
     _txWaiting   = false;
-    _txSendCount = 1; // first fragment sent by sendFragment(0) below
     _rxActive    = false; // half-duplex: stop RX
 
     sendFragment(0);
@@ -377,12 +390,25 @@ void Si4463Nuke::sendFragment(uint16_t idx) {
     pkt[7] = _txLen & 0xFF;              // total size LSB
     pkt[1] = headerCRC8(pkt);             // CRC-8 of header
 
-    // Copy payload (last fragment may be shorter, rest stays zero-padded)
-    uint32_t offset    = (uint32_t)idx * SI4463_FRAG_DATA;
-    uint32_t remaining = _txLen - offset;
-    uint16_t payLen    = (remaining > SI4463_FRAG_DATA)
-                         ? SI4463_FRAG_DATA : (uint16_t)remaining;
-    memcpy(pkt + SI4463_FRAG_HDR, _txData + offset, payLen);
+    // Copy payload: data or parity fragment, then append CRC-16
+    uint8_t* payload = pkt + SI4463_FRAG_HDR;
+    if (!_rsLayout.isParity(idx)) {
+        // Data fragment
+        uint32_t offset    = (uint32_t)idx * SI4463_FRAG_USABLE;
+        uint32_t remaining = _txLen - offset;
+        uint16_t payLen    = (remaining > SI4463_FRAG_USABLE)
+                             ? SI4463_FRAG_USABLE : (uint16_t)remaining;
+        memcpy(payload, _txData + offset, payLen);
+    } else {
+        // Parity fragment
+        uint16_t parityIdx = idx - _rsLayout.dataFrags;
+        memcpy(payload, _parityBuf + (uint32_t)parityIdx * SI4463_FRAG_USABLE,
+               SI4463_FRAG_USABLE);
+    }
+    // CRC-16 over the usable payload bytes
+    uint16_t crc = crc16(payload, SI4463_FRAG_USABLE);
+    payload[SI4463_FRAG_USABLE]     = (crc >> 8) & 0xFF;
+    payload[SI4463_FRAG_USABLE + 1] = crc & 0xFF;
 
     // Reset TX FIFO only (skip clearInterrupts - saves one CTS round trip).
     // FIFO_INFO with TX reset flag, no response needed.
@@ -428,22 +454,13 @@ void Si4463Nuke::pollTxDone() {
         clearInterrupts();
         _txWaiting = false;
 
-        if (_txSendCount < 4) {
-            // Resend same fragment for redundancy
-            _txSendCount++;
+        _txFragIndex++;
+        if (_txFragIndex < _txFragTotal) {
             delayMicroseconds(2000);
             sendFragment(_txFragIndex);
         } else {
-            // All copies sent — advance to next fragment
-            _txSendCount = 1;
-            _txFragIndex++;
-            if (_txFragIndex < _txFragTotal) {
-                delayMicroseconds(2000);
-                sendFragment(_txFragIndex);
-            } else {
-                _txActive = false;
-                _txData   = nullptr;
-            }
+            _txActive = false;
+            _txData   = nullptr;
         }
         return;
     }
@@ -470,10 +487,12 @@ void Si4463Nuke::startRx(uint8_t* buf, uint32_t bufLen) {
     _rxTotalSize = 0;
     _rxFragTotal = 0;
     _rxFragsRcvd = 0;
+    _rxDataFragsRcvd = 0;
     _rxFrameId   = 0xFF;
     _rxAvail     = false;
     _rxActive    = true;
     memset(_rxRecvBits, 0, sizeof(_rxRecvBits));
+    memset(&_rsLayout, 0, sizeof(_rsLayout));
     _txActive    = false; // half-duplex
 
     // Note: intentionally NOT zeroing the buffer. During chunk_output,
@@ -566,11 +585,18 @@ void Si4463Nuke::pollRxDone() {
 
 void Si4463Nuke::processFragment(const uint8_t* pkt) {
     // Verify header CRC-8 before trusting any header fields.
-    // Without this, corrupt packets with random frameIds constantly
-    // reset reassembly, making frame completion impossible.
     {
         uint8_t expected = pkt[1];
         uint8_t computed = headerCRC8(pkt);
+        if (computed != expected) { _rxCrcFail++; return; }
+    }
+
+    // Verify payload CRC-16 (detect bit corruption → clean RS erasure)
+    {
+        const uint8_t* payload = pkt + SI4463_FRAG_HDR;
+        uint16_t expected = ((uint16_t)payload[SI4463_FRAG_USABLE] << 8)
+                          | payload[SI4463_FRAG_USABLE + 1];
+        uint16_t computed = crc16(payload, SI4463_FRAG_USABLE);
         if (computed != expected) { _rxCrcFail++; return; }
     }
 
@@ -583,44 +609,68 @@ void Si4463Nuke::processFragment(const uint8_t* pkt) {
     // Sanity checks
     if (totalSz == 0 || totalSz > _rxBufLen) return;
 
-    uint16_t expectedFrags = (totalSz + SI4463_FRAG_DATA - 1) / SI4463_FRAG_DATA;
-    if (fragIdx >= expectedFrags) return;
+    // Compute RS layout from totalSize
+    RSLayout layout;
+    layout.compute(totalSz, SI4463_FRAG_USABLE);
+    if (fragIdx >= layout.totalFrags) return;
 
     // New frame? Reset reassembly.
     if (frameId != _rxFrameId) {
         if (_rxFrameId != 0xFF) _rxFrameResets++;
         _rxFrameId   = frameId;
-        _rxFragTotal = expectedFrags;
+        _rsLayout    = layout;
+        _rxFragTotal = layout.totalFrags;
         _rxFragsRcvd = 0;
+        _rxDataFragsRcvd = 0;
         _rxTotalSize = totalSz;
         memset(_rxRecvBits, 0, sizeof(_rxRecvBits));
+
+        // Zero parity buffer for new frame
+        if (_parityBuf) {
+            uint32_t parBufSize = (uint32_t)layout.numBlocks * RS_PARITY_SHARDS * SI4463_FRAG_USABLE;
+            memset(_parityBuf, 0, parBufSize);
+        }
     }
 
     // Deduplicate: skip if we already received this fragment index
     uint16_t bitIdx = fragIdx / 8;
     uint8_t  bitMsk = 1 << (fragIdx % 8);
     if (bitIdx < sizeof(_rxRecvBits) && (_rxRecvBits[bitIdx] & bitMsk)) {
-        return; // duplicate — already have this fragment
+        return;
     }
 
-    // Compute actual payload length for this fragment
-    uint32_t dstOffset = (uint32_t)fragIdx * SI4463_FRAG_DATA;
-    uint16_t payLen    = SI4463_FRAG_DATA;
-    if (fragIdx == expectedFrags - 1) {
-        // Last fragment: actual payload is shorter
-        payLen = (uint16_t)(totalSz - dstOffset);
-    }
+    const uint8_t* payload = pkt + SI4463_FRAG_HDR;
 
-    // Bounds check and copy to output buffer
-    if (_rxBuf && dstOffset + payLen <= _rxBufLen) {
-        memcpy(_rxBuf + dstOffset, pkt + SI4463_FRAG_HDR, payLen);
-        if (bitIdx < sizeof(_rxRecvBits)) _rxRecvBits[bitIdx] |= bitMsk;
-        _rxFragsRcvd++;
-        _rxLastFragMs = millis();
+    if (!_rsLayout.isParity(fragIdx)) {
+        // Data fragment → write to _rxBuf
+        uint32_t dstOffset = (uint32_t)fragIdx * SI4463_FRAG_USABLE;
+        uint16_t payLen    = SI4463_FRAG_USABLE;
+        if (fragIdx == _rsLayout.dataFrags - 1) {
+            // Last data fragment may be shorter
+            payLen = (uint16_t)(totalSz - dstOffset);
+        }
+        if (_rxBuf && dstOffset + payLen <= _rxBufLen) {
+            memcpy(_rxBuf + dstOffset, payload, payLen);
+            if (bitIdx < sizeof(_rxRecvBits)) _rxRecvBits[bitIdx] |= bitMsk;
+            _rxFragsRcvd++;
+            _rxDataFragsRcvd++;
+            _rxLastFragMs = millis();
+        }
+    } else {
+        // Parity fragment → write to _parityBuf
+        if (_parityBuf) {
+            uint16_t parityIdx = fragIdx - _rsLayout.dataFrags;
+            uint32_t dstOffset = (uint32_t)parityIdx * SI4463_FRAG_USABLE;
+            memcpy(_parityBuf + dstOffset, payload, SI4463_FRAG_USABLE);
+            if (bitIdx < sizeof(_rxRecvBits)) _rxRecvBits[bitIdx] |= bitMsk;
+            _rxFragsRcvd++;
+            _rxLastFragMs = millis();
+        }
     }
 
     // Check completion
     if (_rxFragsRcvd >= _rxFragTotal) {
+        rsFinishDecode();
         _rxAvail  = true;
         _rxActive = false;
         if (_rxTotalSize > _rxBufLen) _rxTotalSize = _rxBufLen;
@@ -643,11 +693,21 @@ void Si4463Nuke::update() {
         // Accept whatever we have - ~92% of a JPEG is still viewable.
         if (_rxFragsRcvd > 0 && !_rxAvail &&
             millis() - _rxLastFragMs > 150) {
+            rsFinishDecode();
             _rxAvail  = true;
             _rxActive = false;
             if (_rxTotalSize > _rxBufLen) _rxTotalSize = _rxBufLen;
         }
     }
+}
+
+void Si4463Nuke::rsFinishDecode() {
+    if (!_parityBuf || !_rxBuf) return;
+    if (_rxDataFragsRcvd >= _rsLayout.dataFrags) return; // all data received
+
+    rsDecode(_rxBuf, _rxTotalSize, _parityBuf,
+             _rxRecvBits, sizeof(_rxRecvBits),
+             _rsLayout, SI4463_FRAG_USABLE);
 }
 
 bool Si4463Nuke::available() {

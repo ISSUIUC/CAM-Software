@@ -7,6 +7,7 @@
 
 #include <Arduino.h>
 #include <SPI.h>
+#include "RSCodec.h"
 
 // Over-the-air packet size - MUST match WDS Field 1 length.
 // HDR_I (4GFSK 500ksps 433MHz): 120 bytes
@@ -22,6 +23,16 @@
 //   [4-7]  Total size    - 32-bit big-endian, original payload length
 #define SI4463_FRAG_HDR  8
 #define SI4463_FRAG_DATA (SI4463_PACKET_SIZE - SI4463_FRAG_HDR)
+#define SI4463_FRAG_CRC 2
+#define SI4463_FRAG_USABLE (SI4463_FRAG_DATA - SI4463_FRAG_CRC)
+
+// Maximum JPEG frame size (bytes). Determines static parity buffer size.
+#define SI4463_MAX_FRAME_SIZE 131072  // 128 KB
+
+// Parity buffer size computed from max frame size and RS parameters.
+#define RS_MAX_DATA_FRAGS ((SI4463_MAX_FRAME_SIZE + SI4463_FRAG_USABLE - 1) / SI4463_FRAG_USABLE)
+#define RS_MAX_BLOCKS ((RS_MAX_DATA_FRAGS + RS_DATA_SHARDS - 1) / RS_DATA_SHARDS)
+#define RS_PARITY_BUF_SIZE (RS_MAX_BLOCKS * RS_PARITY_SHARDS * SI4463_FRAG_USABLE)
 
 struct Si4463Pins {
     SPIClass* spi;
@@ -127,6 +138,10 @@ private:
     void pollRxDone();
     void processFragment(const uint8_t* pkt);
 
+    // ---- RS FEC ----
+    void rsFinishDecode();
+    static uint16_t crc16(const uint8_t* data, uint16_t len);
+
     // ---- Hardware ----
     Si4463Pins  _pins;
     SPISettings _spiCfg;
@@ -136,7 +151,6 @@ private:
     // ---- TX state ----
     bool           _txActive;
     bool           _txWaiting;     // waiting for PACKET_SENT
-    uint8_t        _txSendCount;   // how many times current fragment has been sent
     const uint8_t* _txData;
     uint32_t       _txLen;
     uint16_t       _txFragIndex;
@@ -155,7 +169,12 @@ private:
     uint8_t  _rxFrameId;
     int      _rssi;
     uint32_t _rxLastFragMs;  // millis() of last valid fragment received
-    uint8_t  _rxRecvBits[128]; // bitfield: tracks which fragments received (up to 1024)
+    uint8_t  _rxRecvBits[256]; // bitfield: tracks which fragments received (up to 2048)
+
+    // ---- RS FEC state ----
+    RSLayout   _rsLayout;
+    uint8_t*   _parityBuf;        // PSRAM buffer, allocated once in begin()
+    uint16_t   _rxDataFragsRcvd;  // count of data fragments received
 
     // ---- Shared ----
     uint8_t  _frameIdGen;
