@@ -90,13 +90,12 @@ static void receive_thread(EAGLESystems* arg) {
             lastFrameMs = now;
             frameNum++;
 
-            bl_stat = !bl_stat;
-            digitalWrite(LED_BLUE, bl_stat);
-
             uint8_t rsResult = radio->getRsResult();
 
             // Only output frames where RS succeeded (0=ok, 1=fixed). Skip corrupt frames.
             if (!output_busy && rsResult <= 1) {
+                bl_stat = !bl_stat;
+                digitalWrite(LED_BLUE, bl_stat);
                 memcpy(output_buffer, frame_buffer, len);
                 output_len = len;
                 xSemaphoreGive(output_sem);

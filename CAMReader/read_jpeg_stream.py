@@ -146,15 +146,15 @@ def serial_worker(ser, frame_queue, stop_event):
                 print(f"Frame {frame_count}: {len(jpeg)} bytes")
 
                 # Save raw buffer as-is (don't trim — let us inspect the actual data)
-                with open(OUTPUT_SINGLE, "wb") as f:
-                    f.write(jpeg)
+                # with open(OUTPUT_SINGLE, "wb") as f:
+                #     f.write(jpeg)
                 # Also save numbered copy for comparison
                 # with open(f"frame_{frame_count:04d}.bin", "wb") as f:
                 #     f.write(jpeg)
 
-                # Append to MJPEG stream
-                stream_file.write(jpeg)
-                stream_file.flush()
+                # # Append to MJPEG stream
+                # stream_file.write(jpeg)
+                # stream_file.flush()
 
                 if not frame_queue.full():
                     try:

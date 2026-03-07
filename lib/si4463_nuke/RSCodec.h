@@ -3,8 +3,8 @@
 #include <string.h>
 #include "../RS/rs.hpp"
 
-#define RS_DATA_SHARDS 192
-#define RS_PARITY_SHARDS 63
+#define RS_DATA_SHARDS 155
+#define RS_PARITY_SHARDS 100
 
 static_assert(RS_DATA_SHARDS + RS_PARITY_SHARDS <= 255, "Block size exceeds GF(2^8)");
 
