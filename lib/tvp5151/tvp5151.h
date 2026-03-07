@@ -4,11 +4,14 @@
 
 
 // Type defs
-enum CAM_SELECT
-{
-    CAM1 = 0,
-    CAM2 = 1
-};
+// enum CAM_SELECT
+// {
+//     CAM1 = 0,
+//     CAM2 = 1
+// };
+
+int CAM1 = 0;
+int CAM2 = 1;
 
 enum TVP_I2C_ERROR
 {
@@ -118,7 +121,7 @@ public:
 
     // TODO: UNTESTED
     //------
-    bool source_select(CAM_SELECT camera);
+    bool source_select(int camera);
     //------
 
     // examples

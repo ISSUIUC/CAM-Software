@@ -26,7 +26,7 @@ class TVPController {
             return CAM_TVP_FAILED_TO_COMMUNICATE;
         }
 
-        if(!tvp.source_select(CAM2)) {  //make sure this is the right camera
+        if(!tvp.source_select(CAM1)) {  
             return CAM_TVP_FAILED_TO_SS;
         }
 
@@ -68,7 +68,7 @@ class TVPController {
         return vsync_locked && hsync_locked && color_locked;
     }
 
-    bool source_select(CAM_SELECT camera) {
+    bool source_select(int camera) {
         return tvp.source_select(camera);
     };
 };
