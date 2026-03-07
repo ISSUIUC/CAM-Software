@@ -326,7 +326,7 @@ static void comm_thread(CAMSystems* arg) {
     xTaskCreatePinnedToCore((TaskFunction_t) cmd_thread, "cmdq", THREAD_STACK_SIZE_DEFAULT, &sys, 10, nullptr, CORE_0);
     xTaskCreatePinnedToCore((TaskFunction_t) poll_thread, "poll", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, CORE_0);
     xTaskCreatePinnedToCore((TaskFunction_t) comm_thread, "comm", THREAD_STACK_SIZE_DEFAULT, &sys, 8, nullptr, CORE_0);
-    xTaskCreatePinnedToCore((TaskFunction_t) video_thread, "video", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, CORE_0);
+    xTaskCreatePinnedToCore((TaskFunction_t) video_thread, "video", THREAD_STACK_SIZE_DEFAULT*4, &sys, 5, nullptr, CORE_0);
 
     digitalWrite(LED_ORANGE, LOW);
 
