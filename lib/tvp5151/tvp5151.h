@@ -10,8 +10,8 @@
 //     CAM2 = 1
 // };
 
-int CAM1 = 0;
-int CAM2 = 1;
+constexpr int CAM1 = 0;
+constexpr int CAM2 = 1;
 
 enum TVP_I2C_ERROR
 {
