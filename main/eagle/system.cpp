@@ -17,6 +17,7 @@ uint8_t *frame_buffer = nullptr;
 uint8_t *output_buffer = nullptr;
 uint32_t output_len = 0;
 SemaphoreHandle_t output_sem = nullptr;
+volatile bool output_busy = false;
 
 void chunk_output(EAGLESystems* arg, uint8_t* buf, size_t len) {
     // CODE BELOW IS FOR JPEG SERIAL OUTPUT!
@@ -58,9 +59,11 @@ static void output_thread(EAGLESystems* arg) {
             uint32_t len = output_len;
             if (len > 0) {
                 #ifdef USE_USB_DEBUG
+                output_busy = true;
                 arg->serial->printf("*FRAME %lu\n", (unsigned long)len);
                 chunk_output(arg, output_buffer, len);
                 arg->serial->println("**DONE");
+                output_busy = false;
                 #endif
             }
         }
@@ -74,29 +77,38 @@ static void receive_thread(EAGLESystems* arg) {
     radio->startRx(frame_buffer, FRAME_SIZE_BYTES);
 
     uint32_t lastStatusMs = 0;
+    uint32_t lastFrameMs = 0;
+    uint32_t frameNum = 0;
 
     while (true) {
         radio->update();
 
         if (radio->available()) {
+            uint32_t now = millis();
             uint32_t len = radio->getReceivedLength();
+            uint32_t dt = now - lastFrameMs;
+            lastFrameMs = now;
+            frameNum++;
 
             bl_stat = !bl_stat;
             digitalWrite(LED_BLUE, bl_stat);
 
-            // Copy frame to output buffer and signal the output thread.
-            // memcpy ~70KB SPIRAM→SPIRAM is ~100μs, way faster than serial output.
-            memcpy(output_buffer, frame_buffer, len);
-            output_len = len;
-            xSemaphoreGive(output_sem);
+            uint8_t rsResult = radio->getRsResult();
+
+            // Only output frames where RS succeeded (0=ok, 1=fixed). Skip corrupt frames.
+            if (!output_busy && rsResult <= 1) {
+                memcpy(output_buffer, frame_buffer, len);
+                output_len = len;
+                xSemaphoreGive(output_sem);
+            }
 
             // Restart RX immediately - don't wait for output to finish
             radio->startRx(frame_buffer, FRAME_SIZE_BYTES);
         }
 
-        // Periodic status print every 2 seconds
+        // Periodic status print every 2 seconds (skip if output thread is sending a frame)
         #ifdef USE_USB_DEBUG
-        if (millis() - lastStatusMs >= 2000) {
+        if (!output_busy && millis() - lastStatusMs >= 2000) {
             lastStatusMs = millis();
             radio->printDebug(*arg->serial);
         }

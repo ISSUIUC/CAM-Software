@@ -47,14 +47,21 @@ void jpeg_encoder::merge_fields(bool a_odd, esp_video_buffer_element *elem_a, es
     // Copy single field (720x240 YUV422 = 345,600 bytes)
     memcpy(merged_buf, odd_field, merged_size);
 
-    // const int row_stride = 722 * 2;
-    // for (int i = 0; i < 240; i++)
-    // {
-    //     memcpy(merged_buf + (2 * i) * row_stride, odd_field + i * row_stride, row_stride);
-    //     uint8_t *dst = merged_buf + (2 * i + 1) * row_stride;
-    //     uint8_t *src = even_field + i * row_stride;
-    //     memcpy(dst, src, row_stride);
-    // }
+    const int row_stride = 718 * 2;
+    for (int i = 0; i < 240; i++)
+    {
+        // copy from original at 0, 720, ... 
+        // to 0, 718, ...
+        int orig_pos = i * 2 * 720;
+        int new_pos = i * 718 * 2;
+
+        memcpy(merged_buf + new_pos, odd_field + orig_pos, row_stride);
+        // uint8_t *dst = merged_buf + (2 * i + 1) * row_stride;
+        // uint8_t *src = even_field + i * row_stride;
+        // memcpy(dst, src, row_stride);
+    }
+
+    memset(merged_buf + 239 * 718 * 2, 0, 2 * 239);
 }
 
 void jpeg_encoder::clean_cache_and_memory()

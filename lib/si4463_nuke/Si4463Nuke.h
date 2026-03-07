@@ -79,6 +79,9 @@ public:
     // RSSI of last received packet in dBm.
     int getRSSI() const { return _rssi; }
 
+    // RS decode result for last frame: 0=ok, 1=fixed, 2=FAIL, 3=no buf
+    uint8_t getRsResult() const { return _rsLastResult; }
+
     // True while TX is in progress.
     bool isBusy() const { return _txActive; }
 
@@ -167,6 +170,7 @@ private:
     uint16_t _rxFragTotal;
     uint16_t _rxFragsRcvd;
     uint8_t  _rxFrameId;
+    uint8_t  _rxRejectId;    // frameId to ignore (stale fragments from previous frame)
     int      _rssi;
     uint32_t _rxLastFragMs;  // millis() of last valid fragment received
     uint8_t  _rxRecvBits[256]; // bitfield: tracks which fragments received (up to 2048)

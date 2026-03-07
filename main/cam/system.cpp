@@ -4,6 +4,7 @@
 #include <errors.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_heap_caps.h"
 
 #define THREAD_STACK_SIZE_DEFAULT 4096
 
@@ -121,6 +122,7 @@ static void poll_thread(CAMSystems* arg) {
 
 
 bool light_on_frame = false;
+uint32_t frame_counter = 0;
 
 void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems* arg)
 {
@@ -131,7 +133,14 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems* arg)
     digitalWrite(LED_GREEN, light_on_frame);
     arg->b2b.state.vmux_state = !arg->b2b.state.vmux_state;
 
-    // arg->serial->println("Get Frame Done");
+    // Heap monitoring: print every 10 frames
+    frame_counter++;
+    if (frame_counter % 10 == 0) {
+        arg->serial->printf("[heap] frame=%lu free=%lu min=%lu\n",
+            (unsigned long)frame_counter,
+            (unsigned long)esp_get_free_heap_size(),
+            (unsigned long)esp_get_minimum_free_heap_size());
+    }
 
     arg->radio.send(buf, len);
     while (arg->radio.isTxBusy()) {
@@ -189,13 +198,13 @@ static void video_thread(CAMSystems* arg) {
 
             //move to new file once radio is added
 
-            if(!arg->tvp.tvp_locked()) {
-                digitalWrite(LED_RED, HIGH);
-                arg->b2b.state.vtx_state = false;
-                vTaskDelay(pdMS_TO_TICKS(10));
+            // if(!arg->tvp.tvp_locked()) {
+            //     digitalWrite(LED_RED, HIGH);
+            //     arg->b2b.state.vtx_state = false;
+            //     vTaskDelay(pdMS_TO_TICKS(10));
                 
-                continue;
-            }
+            //     continue;
+            // }
             arg->b2b.state.vtx_state = true; // VTX state reports image phase lock (for now)
 
             digitalWrite(LED_RED, LOW);
@@ -288,6 +297,8 @@ static void comm_thread(CAMSystems* arg) {
     USBSerial.begin(115200);
     sys.serial = &USBSerial;
 
+    // Power on camera BEFORE TVP init so it locks onto a real video signal
+    sys.cameras.cam1.set_state(CAM_STATE_ON);
 
     uint8_t tvp_res = sys.tvp.init();
     if (tvp_res != CAM_OK) {
@@ -320,13 +331,10 @@ static void comm_thread(CAMSystems* arg) {
         while(1) {};
     }
 
-    sys.cameras.cam1.set_state(CAM_STATE_ON);
-    // sys.cameras.cam2.set_state(CAM_STATE_ON);
-
-    xTaskCreatePinnedToCore((TaskFunction_t) cmd_thread, "cmdq", THREAD_STACK_SIZE_DEFAULT, &sys, 10, nullptr, CORE_0);
-    xTaskCreatePinnedToCore((TaskFunction_t) poll_thread, "poll", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, CORE_0);
-    xTaskCreatePinnedToCore((TaskFunction_t) comm_thread, "comm", THREAD_STACK_SIZE_DEFAULT, &sys, 8, nullptr, CORE_0);
-    xTaskCreatePinnedToCore((TaskFunction_t) video_thread, "video", THREAD_STACK_SIZE_DEFAULT*4, &sys, 5, nullptr, CORE_0);
+    xTaskCreatePinnedToCore((TaskFunction_t) cmd_thread, "cmdq", THREAD_STACK_SIZE_DEFAULT, &sys, 10, nullptr, CORE_1);
+    xTaskCreatePinnedToCore((TaskFunction_t) poll_thread, "poll", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, CORE_1);
+    xTaskCreatePinnedToCore((TaskFunction_t) comm_thread, "comm", THREAD_STACK_SIZE_DEFAULT, &sys, 8, nullptr, CORE_1);
+    xTaskCreatePinnedToCore((TaskFunction_t) video_thread, "video", THREAD_STACK_SIZE_DEFAULT*8, &sys, 5, nullptr, CORE_0);
 
     digitalWrite(LED_ORANGE, LOW);
 

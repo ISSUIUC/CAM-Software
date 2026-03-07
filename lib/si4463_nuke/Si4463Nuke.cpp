@@ -268,6 +268,7 @@ bool Si4463Nuke::begin(Si4463Pins pins) {
     _rxFragTotal = 0;
     _rxFragsRcvd = 0;
     _rxFrameId   = 0xFF;
+    _rxRejectId  = 0xFE;
     _rssi        = -134;
     _rxLastFragMs = 0;
     _parityBuf = (uint8_t*)heap_caps_malloc(RS_PARITY_BUF_SIZE, MALLOC_CAP_SPIRAM);
@@ -492,6 +493,7 @@ void Si4463Nuke::startRx(uint8_t* buf, uint32_t bufLen) {
     _rxFragTotal = 0;
     _rxFragsRcvd = 0;
     _rxDataFragsRcvd = 0;
+    _rxRejectId  = _rxFrameId; // reject stale fragments from completed/timed-out frame
     _rxFrameId   = 0xFF;
     _rxAvail     = false;
     _rxActive    = true;
@@ -547,27 +549,27 @@ void Si4463Nuke::pollRxDone() {
 
     _rxPollHits++;
 
-    // --- CRITICAL HOT PATH: minimize time before re-entering RX ---
-    // The TX sends fragments back-to-back. Every microsecond we spend
-    // NOT in RX mode is a fragment we might miss.
-
     // 1. Read FIFO (no CTS wait - instant)
     uint8_t pkt[SI4463_PACKET_SIZE];
     readFifo(pkt, SI4463_PACKET_SIZE);
 
-    // 2. Clear interrupts FIRST (while chip is in READY, before START_RX).
-    //    This ensures PH_PEND flags are clean for the next packet detection.
+    // 2. Clear interrupts (while chip is in READY).
     clearInterrupts();
 
-    // 3. Reset RX FIFO (fast path - sendCmd, skip response read).
-    //    Shared FIFO mode may need explicit reset even after full read.
+    // 3. Reset RX FIFO.
     {
         uint8_t fifoCmd[2] = {CMD_FIFO_INFO, 0x02};
         sendCmd(fifoCmd, 2);
     }
 
-    // 4. START_RX - re-enter receive mode
-    {
+    // 4. Process the fragment BEFORE re-entering RX.
+    //    If this completes the frame, we stay in READY (no stale packets).
+    processFragment(pkt);
+
+    // 5. Re-enter RX only if still receiving. If the frame just completed,
+    //    the chip stays in READY until startRx() is called — no parity
+    //    fragments can sneak in and trigger a false second frame.
+    if (_rxActive) {
         uint8_t cmd[8] = {
             CMD_START_RX,
             _channel,
@@ -579,12 +581,6 @@ void Si4463Nuke::pollRxDone() {
         };
         sendCmd(cmd, 8);
     }
-
-    // 5. Process the fragment at leisure (memcpy to output buffer)
-    processFragment(pkt);
-
-    // If reassembly is complete, stop RX
-    // (processFragment sets _rxAvail=true and _rxActive=false)
 }
 
 void Si4463Nuke::processFragment(const uint8_t* pkt) {
@@ -594,6 +590,9 @@ void Si4463Nuke::processFragment(const uint8_t* pkt) {
         uint8_t computed = headerCRC8(pkt);
         if (computed != expected) { _rxCrcFail++; return; }
     }
+
+    // Reject stale fragments from a previously completed/timed-out frame
+    if (pkt[0] == _rxRejectId) return;
 
     // Verify payload CRC-16 (detect bit corruption → clean RS erasure)
     {
@@ -672,8 +671,9 @@ void Si4463Nuke::processFragment(const uint8_t* pkt) {
         }
     }
 
-    // Check completion
-    if (_rxFragsRcvd >= _rxFragTotal) {
+    // Check completion: all data frags received means image is complete,
+    // no need to wait for parity (parity only helps recover missing data)
+    if (_rxDataFragsRcvd >= _rsLayout.dataFrags || _rxFragsRcvd >= _rxFragTotal) {
         rsFinishDecode();
         _rxAvail  = true;
         _rxActive = false;
