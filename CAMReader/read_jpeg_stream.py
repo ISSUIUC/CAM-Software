@@ -23,6 +23,7 @@ import io
 import serial
 import numpy as np
 from PIL import Image, ImageFile
+
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 try:
@@ -31,7 +32,7 @@ try:
     HAS_DISPLAY = True
 except ImportError:
     HAS_DISPLAY = False
-PORT = "COM15"
+PORT = "/dev/cu.usbmodem01"
 
 BAUD = 115200
 
@@ -140,7 +141,9 @@ def serial_worker(ser, frame_queue, stop_event):
 
                 # If JPEG should start at byte 0 but doesn't, the data is corrupted from the start
                 if jpeg[:2] != b"\xff\xd8":
-                    print(f"WARNING: buffer does NOT start with FF D8 — data is corrupt or mis-framed")
+                    print(
+                        f"WARNING: buffer does NOT start with FF D8 — data is corrupt or mis-framed"
+                    )
 
                 frame_count += 1
                 print(f"Frame {frame_count}: {len(jpeg)} bytes")
@@ -152,9 +155,9 @@ def serial_worker(ser, frame_queue, stop_event):
                 # with open(f"frame_{frame_count:04d}.bin", "wb") as f:
                 #     f.write(jpeg)
 
-                # # Append to MJPEG stream
-                # stream_file.write(jpeg)
-                # stream_file.flush()
+                # Append to MJPEG stream
+                stream_file.write(jpeg)
+                stream_file.flush()
 
                 if not frame_queue.full():
                     try:
@@ -217,7 +220,9 @@ def main():
                     if img is not None:
                         last_img = img
                     else:
-                        print(f"cv2.imdecode FAILED for {len(chunk)} byte frame (first 4: {chunk[:4].hex(' ')})")
+                        print(
+                            f"cv2.imdecode FAILED for {len(chunk)} byte frame (first 4: {chunk[:4].hex(' ')})"
+                        )
 
                 if last_img is not None:
                     cv2.imshow(PREVIEW_WINDOW, last_img)
