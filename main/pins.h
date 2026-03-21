@@ -29,7 +29,7 @@
     #define SI4463_GPIO0 27
     #define SI4463_GPIO1 26
 
-    #define LED_BLUE 54
+    #define LED_BLUE 43
     #define LED_GREEN 53
     #define LED_ORANGE 52
     #define LED_RED 51
