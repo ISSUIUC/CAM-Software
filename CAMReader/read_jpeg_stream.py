@@ -99,8 +99,6 @@ def decode_jpeg(jpeg_bytes: bytes):
 def serial_worker(ser, frame_queue, stop_event):
     frame_count = 0
 
-    stream_file = open(OUTPUT_STREAM, "wb")
-
     try:
         while not stop_event.is_set():
 
@@ -155,13 +153,10 @@ def serial_worker(ser, frame_queue, stop_event):
                 # with open(f"frame_{frame_count:04d}.bin", "wb") as f:
                 #     f.write(jpeg)
 
-                # Append to MJPEG stream
-                stream_file.write(jpeg)
-                stream_file.flush()
-
                 if not frame_queue.full():
                     try:
                         frame_queue.put_nowait(jpeg)
+
                     except queue.Full:
                         pass
 
@@ -169,7 +164,6 @@ def serial_worker(ser, frame_queue, stop_event):
         print("Serial error:", e)
 
     finally:
-        stream_file.close()
         print("Stopped.")
 
 
@@ -179,6 +173,8 @@ def serial_worker(ser, frame_queue, stop_event):
 
 
 def main():
+    stream_file = open(OUTPUT_STREAM, "wb")
+
     parser = argparse.ArgumentParser(description="Read JPEG stream from ESP32")
     args = parser.parse_args()
 
@@ -212,6 +208,9 @@ def main():
                 while True:
                     try:
                         chunk = frame_queue.get_nowait()
+                        # Append to MJPEG stream
+                        stream_file.write(chunk)
+                        stream_file.flush()
                     except queue.Empty:
                         break
 
@@ -236,6 +235,7 @@ def main():
         print("\nStopping...")
 
     finally:
+        stream_file.close()
         stop_event.set()
         worker.join(timeout=2.0)
         ser.close()
