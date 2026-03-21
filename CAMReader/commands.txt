@@ -1,3 +1,3 @@
-  ffmpeg -f mjpeg -i CAMReader/output_stream.mjpg -c:v copy output.avi   
+ffmpeg -r 5 -f mjpeg -i output_stream.mjpg -c:v libx264 output.mp4
 
-   ffplay -f mjpeg -framerate 5 CAMReader/output_stream.mjpg               
+ffplay -f mjpeg -framerate 5 output_stream.mjpg               
