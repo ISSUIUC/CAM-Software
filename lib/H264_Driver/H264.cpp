@@ -7,6 +7,53 @@
 #include "esp_h264_alloc.h"
 #include "h264io.h"
 
+
+
+//ChatGPT Code for UYUV YUV422 to Grayscale O_UYY_E_VYY YUV420 (needs fixing)
+
+// Output format:
+// - Odd lines:  U Y Y
+// - Even lines: V Y Y
+// - 3 bytes per 2 pixels → stride = width * 3 / 2
+
+static inline size_t esp420_stride(int width) {
+    return (width * 3) >> 1; // width * 3 / 2
+}
+
+// 1) Prefill entire buffer with 128 (neutral chroma)
+void prefill_chroma_128(uint8_t* dst, int width, int height) {
+    const size_t stride = esp420_stride(width);
+    const size_t total_size = stride * height;
+
+    memset(dst, 128, total_size);
+}
+
+// 2) Convert UYVY (YUV422) → grayscale in ESP format
+// Assumes dst is already prefilled with 128
+void uyvy422_to_esp420_gray(const uint8_t* __restrict src, uint8_t* __restrict dst, int width, int height) {
+    const int src_stride = width * 2;         // UYVY
+    const int dst_stride = esp420_stride(width);
+
+    for (int y = 0; y < height; ++y) {
+        const uint8_t* s = src + y * src_stride;
+        uint8_t* d = dst + y * dst_stride;
+
+        int x = 0;
+
+        // Process 2 pixels per iteration
+        for (; x <= width - 2; x += 2) {
+            // UYVY: [U Y0 V Y1]
+            // We only care about Y0 and Y1
+
+            d[1] = s[1]; // Y0
+            d[2] = s[3]; // Y1
+
+            s += 4;
+            d += 3;
+        }
+    }
+}
+
 esp_h264_enc_cfg_t H264_ENC::set_config_H264_enc_single(esp_h264_raw_format_t format, uint8_t fps, uint16_t height, uint16_t width, uint32_t bitrate, uint8_t qp_min, uint8_t qp_max, uint8_t gop)
 {
     esp_h264_enc_cfg_t config;

@@ -12,6 +12,14 @@
 #include "esp_h264_dec_sw.h"
 
 
+/*  Sample initialization code
+H264_ENC enc;
+esp_h264_enc_cfg_t enc_cfg = enc.set_config_H264_enc_single(ESP_H264_RAW_FMT_O_UYY_E_VYY, 24, 480, 720, 82944, 26, 30, 30);
+esp_h264_err_t ret = enc.init_H264_enc_single(enc_cfg, HW);
+enc.run_H264_enc_single();
+enc.close_H264_enc_single();
+*/
+
 enum enc_type {
     HW,
     SW
