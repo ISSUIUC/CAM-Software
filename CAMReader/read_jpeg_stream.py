@@ -23,6 +23,7 @@ import io
 import serial
 import numpy as np
 from PIL import Image, ImageFile
+from combine_images import re_combine
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -40,6 +41,7 @@ OUTPUT_SINGLE = "output.jpg"
 OUTPUT_STREAM = "output_stream.mjpg"
 
 PREVIEW_WINDOW = "JPEG Preview"
+PREVIEW_COMBINED = "JPEG COMBINED"
 
 
 # ------------------------------------------------------------
@@ -82,13 +84,14 @@ def decode_jpeg(jpeg_bytes: bytes):
         img = np.array(pil_img)
         if len(img.shape) == 3 and img.shape[2] == 3:
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        return img
+            re_combined_img = re_combine(img)
+        return img, re_combined_img
     except Exception as e:
         print(f"  Pillow decode failed: {e}")
 
     # Fallback to OpenCV
     arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
-    return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    return cv2.imdecode(arr, cv2.IMREAD_COLOR), 69
 
 
 # ------------------------------------------------------------
@@ -193,6 +196,7 @@ def main():
 
     if HAS_DISPLAY:
         cv2.namedWindow(PREVIEW_WINDOW, cv2.WINDOW_NORMAL)
+        cv2.namedWindow(PREVIEW_COMBINED, cv2.WINDOW_NORMAL)
         print("Press 'q' in preview window to quit.")
     else:
         print("Install opencv-python for live preview.")
@@ -215,7 +219,7 @@ def main():
                         break
 
                 if chunk is not None:
-                    img = decode_jpeg(chunk)
+                    img, recombined_image = decode_jpeg(chunk)
                     if img is not None:
                         last_img = img
                     else:
@@ -225,6 +229,10 @@ def main():
 
                 if last_img is not None:
                     cv2.imshow(PREVIEW_WINDOW, last_img)
+                    if recombined_image is not None:
+                        cv2.imshow(PREVIEW_COMBINED, recombined_image)
+                    else:
+                        cv2.imshow(PREVIEW_COMBINED, last_img)
 
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     stop_event.set()
