@@ -2,7 +2,6 @@
 
 #include "fsk.h"
 #include "fsk_framer.h"
-#include "fsk_framer_rx.h"
 #include "fsk_reassembler.h"
 
 #include <pins.h>
