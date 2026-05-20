@@ -1,55 +1,61 @@
-#include "radio.h"
+#include "fsk.h"
 
 LR2021FSKDriver *LR2021FSKDriver::_instance = nullptr;
 
 LR2021FSKDriver::LR2021FSKDriver()
-    : mySPI(HSPI),
-      spiSettings(SPI_SPEED, MSBFIRST, SPI_MODE0),
-      radio(new Module(LR2021_CS, LR2021_GPIO9, LR2021_NRST, LR2021_BUSY, mySPI, spiSettings))
+    : spiSettings(SPI_SPEED, MSBFIRST, SPI_MODE0)
 {
 }
 
-LR2021Error LR2021FSKDriver::init()
+LR2021Error LR2021FSKDriver::init(SPIClass &spi)
 {
-    if (!mySPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, LR2021_CS))
-        return LR2021Error(LR2021_ERR_SPI_INIT_FAILED, 0);
+    _spi = &spi;
+    if (radio != nullptr)
+    {
+        delete radio;
+        radio = nullptr;
+    }
+    radio = new LR2021(new Module(LR2021_CS, LR2021_GPIO9, LR2021_NRST, LR2021_BUSY, *_spi, spiSettings));
 
-    radio.irqDioNum = IRQ_PIN;
+    pinMode(LR2021_CS, OUTPUT);
+    digitalWrite(LR2021_CS, HIGH);
 
-    Serial.print(F("Initializing ... "));
+    radio->irqDioNum = IRQ_PIN;
+
+    // Serial.print(F("Initializing ... "));
 
     // use 434 configureations for now.
     int state = 0;
     if (FREQ_FSK == FREQ_434)
-        state = radio.beginGFSK(FREQ_FSK, BITRATE_FSK_434, FREQ_DEV_FSK_434, RX_BANDWIDTH_FSK_434, POWER, PREAMBLE_LENGTH, XTAL_MODE);
+        state = radio->beginGFSK(FREQ_FSK, BITRATE_FSK_434, FREQ_DEV_FSK_434, RX_BANDWIDTH_FSK_434, POWER, PREAMBLE_LENGTH, XTAL_MODE);
     else
-        state = radio.beginGFSK(FREQ_FSK, BITRATE_FSK_915, FREQ_DEV_FSK_915, RX_BANDWIDTH_FSK_915, POWER, PREAMBLE_LENGTH, XTAL_MODE);
+        state = radio->beginGFSK(FREQ_FSK, BITRATE_FSK_915, FREQ_DEV_FSK_915, RX_BANDWIDTH_FSK_915, POWER, PREAMBLE_LENGTH, XTAL_MODE);
 
     if (state != RADIOLIB_ERR_NONE)
         return LR2021Error(LR2021_ERR_FSK_INIT_FAILED, state);
 
-    state = radio.setDataShaping(RADIOLIB_SHAPING_NONE);
+    state = radio->setDataShaping(RADIOLIB_SHAPING_NONE);
     if (state != RADIOLIB_ERR_NONE)
         return LR2021Error(LR2021_ERR_DATASHAPING, state);
 
-    state = radio.fixedPacketLengthMode(PAYLOAD_SIZE_FSK);
+    state = radio->fixedPacketLengthMode(PAYLOAD_SIZE_FSK);
     if (state != RADIOLIB_ERR_NONE)
         return LR2021Error(LR2021_ERR_FSK_FIXED_PACKET_MD, state);
 
-    state = radio.setSyncWord(SYNC_WORD_FSK, 4);
+    state = radio->setSyncWord(SYNC_WORD_FSK, 4);
     if (state != RADIOLIB_ERR_NONE)
         return LR2021Error(LR2021_ERR_SYNC_WORD_FAILED, state);
 
-    state = radio.setCRC(2, 0xFFFF, 0x8005, false); // IBM CRC (2 bytes, initial 0xFFFF, polynomial 0x8005, non-inverted)
+    state = radio->setCRC(2, 0xFFFF, 0x8005, false); // IBM CRC (2 bytes, initial 0xFFFF, polynomial 0x8005, non-inverted)
     if (state != RADIOLIB_ERR_NONE)
         return LR2021Error(LR2021_ERR_CRC_CONFIG_FAILED, state);
 
-    state = radio.disableAddressFiltering();
+    state = radio->disableAddressFiltering();
     if (state != RADIOLIB_ERR_NONE)
         return LR2021Error(LR2021_ERR_ADDRESS_FILTERING, state);
 
     _instance = this;
-    radio.setIrqAction(setFlag);
+    radio->setIrqAction(setFlag);
 
     setIRQ();
 
@@ -81,7 +87,7 @@ LR2021Error LR2021FSKDriver::transmit(uint8_t *data, uint8_t len)
         if (micros() - start > timeout)
             return LR2021Error{LR2021_ERR_TX_TIMEOUT, 0};
         if (!radioEvent)
-            continue;
+            taskYIELD();
         radioEvent = false;
 
         uint32_t irq = readIRQ(); // GetAndClearIrqStatus (same as FLRC)
@@ -106,7 +112,7 @@ LR2021Error LR2021FSKDriver::transmitBurst(uint8_t **packets, int count, uint8_t
         memcpy(&cmd[2], packets[i], len);
         // ignore busy lol and just push into fifo
         digitalWrite(LR2021_CS, LOW);
-        mySPI.transferBytes(cmd, nullptr, len + 2);
+        _spi->transferBytes(cmd, nullptr, len + 2);
         digitalWrite(LR2021_CS, HIGH);
 
         // now we wait for radioEvents
@@ -157,7 +163,7 @@ LR2021Error LR2021FSKDriver::receive(uint8_t *data, uint8_t len, LR2021FskPktSta
         if (micros() - start > timeout)
             return LR2021Error{LR2021_ERR_RX_TIMEOUT, 0};
         if (!radioEvent)
-            continue;
+            taskYIELD();
         radioEvent = false;
 
         uint32_t irq = readIRQ();
@@ -243,22 +249,22 @@ void LR2021FSKDriver::spiWrite(const uint8_t *cmd, size_t len)
 {
     while (digitalRead(LR2021_BUSY))
         ;
-    mySPI.beginTransaction(spiSettings);
+    _spi->beginTransaction(spiSettings);
     digitalWrite(LR2021_CS, LOW);
-    mySPI.transferBytes(cmd, nullptr, len);
+    _spi->transferBytes(cmd, nullptr, len);
     digitalWrite(LR2021_CS, HIGH);
-    mySPI.endTransaction();
+    _spi->endTransaction();
 }
 
 void LR2021FSKDriver::spiTransfer(const uint8_t *txBuf, uint8_t *rxBuf, size_t len)
 {
     while (digitalRead(LR2021_BUSY))
         ;
-    mySPI.beginTransaction(spiSettings);
+    _spi->beginTransaction(spiSettings);
     digitalWrite(LR2021_CS, LOW);
-    mySPI.transferBytes(txBuf, rxBuf, len);
+    _spi->transferBytes(txBuf, rxBuf, len);
     digitalWrite(LR2021_CS, HIGH);
-    mySPI.endTransaction();
+    _spi->endTransaction();
 }
 
 IRAM_ATTR void LR2021FSKDriver::setFlag()
@@ -272,10 +278,10 @@ IRAM_ATTR void LR2021FSKDriver::setFlag()
 // Might not be necessary
 void LR2021FSKDriver::transmitCallSign()
 {
-    radio.variablePacketLengthMode(PAYLOAD_SIZE_FSK);
-    radio.startTransmit((uint8_t *)CALL_SIGN, strlen(CALL_SIGN));
+    radio->variablePacketLengthMode(PAYLOAD_SIZE_FSK);
+    radio->startTransmit((uint8_t *)CALL_SIGN, strlen(CALL_SIGN));
     delay(500);
-    radio.fixedPacketLengthMode(PAYLOAD_SIZE_FSK);
+    radio->fixedPacketLengthMode(PAYLOAD_SIZE_FSK);
     delay(10);
     setIRQ();
 }
