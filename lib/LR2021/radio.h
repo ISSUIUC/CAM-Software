@@ -5,7 +5,7 @@
 
 #include <RadioLib.h>
 #include <Arduino.h>
-#include "../../src/pins.h"
+#include "../../main/pins.h"
 
 static const uint16_t PAYLOAD_SIZE = 511;
 static const uint8_t PAYLOAD_SIZE_FSK = RADIOLIB_LR2021_MAX_PACKET_LENGTH;
