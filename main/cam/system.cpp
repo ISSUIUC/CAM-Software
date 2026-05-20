@@ -160,36 +160,60 @@ static void poll_thread(CAMSystems *arg)
 }
 
 bool light_on_frame = false;
-uint32_t frame_counter = 0;
+uint8_t frame_id = 0;
 
 void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
 {
-    // arg->serial->println("on_frame_ready");
     if (len == 0)
+        return;
+
+    uint16_t n = fsk_frame_count(len);
+    if (n == 0)
         return;
 
     light_on_frame = !light_on_frame;
     digitalWrite(LED_GREEN, light_on_frame);
     arg->b2b.state.vmux_state = !arg->b2b.state.vmux_state;
 
-    // Heap monitoring: print every 10 frames
-    frame_counter++;
-    if (frame_counter % 10 == 0)
+    LR2021FSKDriver *driver = arg->radio.getDriver();
+
+    uint8_t (*pool)[PAYLOAD_SIZE_FSK] = (uint8_t (*)[PAYLOAD_SIZE_FSK])
+        heap_caps_malloc((size_t)n * PAYLOAD_SIZE_FSK, MALLOC_CAP_SPIRAM);
+    uint8_t **ptrs = (uint8_t **)heap_caps_malloc(n * sizeof(uint8_t *), MALLOC_CAP_SPIRAM);
+
+    if (!pool || !ptrs)
     {
-        arg->serial->printf("[heap] frame=%lu free=%lu min=%lu\n",
-                            (unsigned long)frame_counter,
-                            (unsigned long)esp_get_free_heap_size(),
-                            (unsigned long)esp_get_minimum_free_heap_size());
+        heap_caps_free(pool);
+        heap_caps_free(ptrs);
+        arg->serial->println("[tx] OOM building frame");
+        return;
     }
 
-    arg->radio.send(buf, len);
-    while (arg->radio.isTxBusy())
+    frame_id++;
+
+    FskFrame frame = fsk_frame_build(frame_id, buf, len, pool, ptrs, n);
+
+    if (frame.valid)
     {
-        arg->radio.update();
-        // arg->serial->print(".");
-        taskYIELD();
+        LR2021Error err = fsk_frame_transmit(*driver, frame);
+        if (!err.ok())
+        {
+            arg->serial->print("[tx] burst failed: ");
+            arg->serial->println(err.stageStr());
+        }
     }
+
+    // if (frame_id % 10 == 0)
+    // {
+    //     arg->serial->printf("[heap] frame=%lu free=%lu min=%lu\n",
+    //                         (unsigned long)frame_id,
+    //                         (unsigned long)esp_get_free_heap_size(),
+    //                         (unsigned long)esp_get_minimum_free_heap_size());
+    // }
     // arg->serial->println("TX Done");
+
+    heap_caps_free(pool);
+    heap_caps_free(ptrs);
 }
 
 static void video_thread(CAMSystems *arg)

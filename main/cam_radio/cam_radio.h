@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fsk.h"
+#include "fsk_framer.h"
 #include <pins.h>
 #include <SPI.h>
 
@@ -42,5 +43,5 @@ public:
     // int getRSSI() const;
 
     // // Access underlying driver for debug/advanced use.
-    // LR2021FSKDriver *getDriver() { return &_radio; }
+    LR2021FSKDriver *getDriver() { return &_radio; }
 };
