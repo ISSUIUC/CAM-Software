@@ -164,6 +164,7 @@ uint8_t frame_id = 0;
 
 void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
 {
+    arg->serial->println("on frame ready called!");
     if (len == 0)
         return;
 
@@ -222,6 +223,8 @@ static void video_thread(CAMSystems *arg)
     {
         vTaskDelay(pdMS_TO_TICKS(10));
 
+        arg->serial->println("field a and b start.");
+
         // Field A
         esp_video_buffer_element *elem_a = esp_video_recv_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, pdMS_TO_TICKS(100));
         if (!elem_a)
@@ -239,16 +242,31 @@ static void video_thread(CAMSystems *arg)
             continue;
         }
 
+        arg->serial->println("field a and b end.");
+        arg->serial->print("A length: ");
+        arg->serial->println(sizeof(elem_a->buffer));
+        arg->serial->print("B length: ");
+        arg->serial->println(sizeof(elem_b->buffer));
+        arg->serial->println("--------");
+
         bool b_odd = !arg->tvp.tvp.read_field_sequence_status();
 
+        arg->serial->println("JPEG.merge_fields() start.");
+
         arg->JPEG.merge_fields(a_odd, elem_a, elem_b);
+
+        arg->serial->println("JPEG.merge_fields() done.");
 
         esp_video_queue_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, elem_a);
         esp_video_queue_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, elem_b);
 
         arg->JPEG.clean_cache_and_memory();
 
+        arg->serial->println("JPEG.encode() start.");
+
         esp_err_t enc_ret = arg->JPEG.encode();
+
+        arg->serial->println("JPEG.encode() done.");
 
         if (enc_ret != ESP_OK)
         {
@@ -257,8 +275,8 @@ static void video_thread(CAMSystems *arg)
         }
         else
         {
-            // arg->serial->print("JPEG compressed size: ");
-            // arg->serial->println(arg->JPEG.jpg_encoded_size);
+            arg->serial->print("JPEG compressed size: ");
+            arg->serial->println(arg->JPEG.jpg_encoded_size);
 
             // arg->serial->print("*FRAME ");
             // arg->serial->println(arg->JPEG.jpg_encoded_size);
