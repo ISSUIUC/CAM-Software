@@ -33,6 +33,7 @@ static inline void debug_led_blink(int count)
         gpio_set_level(DEBUG_LED_PIN, 0);
         esp_rom_delay_us(100000);
     }
+    esp_rom_delay_us(10000000);
 }
 
 #if CONFIG_ESP_VIDEO_CHECK_PARAMETERS
