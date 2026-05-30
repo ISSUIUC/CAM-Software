@@ -29,9 +29,9 @@ static inline void debug_led_blink(int count)
     for (int i = 0; i < count; i++)
     {
         gpio_set_level(DEBUG_LED_PIN, 1);
-        esp_rom_delay_us(100000);
+        esp_rom_delay_us(1000000);
         gpio_set_level(DEBUG_LED_PIN, 0);
-        esp_rom_delay_us(100000);
+        esp_rom_delay_us(1000000);
     }
     esp_rom_delay_us(10000000);
 }
