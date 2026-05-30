@@ -223,6 +223,16 @@ static void video_thread(CAMSystems *arg)
     {
         vTaskDelay(pdMS_TO_TICKS(10));
 
+        bool v_lock = sys.tvp.tvp.read_vertical_sync_lock_status();
+        bool h_lock = sys.tvp.tvp.read_horizontal_sync_lock_status();
+        bool avid_signal = digitalRead(TVP5151_AVID);
+        sys.serial->print("V-Lock: ");
+        sys.serial->print(v_lock);
+        sys.serial->print(" H-Lock: ");
+        sys.serial->print(h_lock);
+        sys.serial->print(" AVID: ");
+        sys.serial->println(avid_signal);
+
         arg->serial->println("field a and b start.");
 
         // Field A
