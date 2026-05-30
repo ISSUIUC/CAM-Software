@@ -223,7 +223,7 @@ static void video_thread(CAMSystems *arg)
     {
         vTaskDelay(pdMS_TO_TICKS(10));
 
-        // arg->serial->println("field a and b start.");
+        arg->serial->println("field a and b start.");
 
         // Field A
         esp_video_buffer_element *elem_a = esp_video_recv_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, pdMS_TO_TICKS(100));
@@ -399,7 +399,7 @@ static void comm_thread(CAMSystems *arg)
     sys.serial = &USBSerial;
 
     digitalWrite(LED_BLUE, HIGH);
-    while (!sys.serial)
+    while (!USBSerial)
     {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
