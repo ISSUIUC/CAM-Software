@@ -400,7 +400,7 @@ static void comm_thread(CAMSystems *arg)
 
     while (!sys.serial)
     {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 
     // Power on camera BEFORE TVP init so it locks onto a real video signal
