@@ -398,6 +398,11 @@ static void comm_thread(CAMSystems *arg)
     USBSerial.begin(115200);
     sys.serial = &USBSerial;
 
+    while (!sys.serial)
+    {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
     // Power on camera BEFORE TVP init so it locks onto a real video signal
     sys.cameras.cam1.set_state(CAM_STATE_ON);
     sys.cameras.cam2.set_state(CAM_STATE_ON);
