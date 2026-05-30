@@ -81,7 +81,7 @@ static void poll_thread(CAMSystems *arg)
         toReturn1 = read_mem_cap_data(arg->cameras.cam1);
         if (toReturn1.status == 1)
         {
-            arg->serial->println("Cam1 valid");
+            // arg->serial->println("Cam1 valid");
             arg->b2b.state.cam1_on = true;
             cam1_consecutive_invalid = 0;
             if (current_mem_cam1 == 0)
@@ -90,9 +90,9 @@ static void poll_thread(CAMSystems *arg)
             }
             else
             {
-                arg->serial->print(current_mem_cam1);
-                arg->serial->print("/");
-                arg->serial->println(toReturn1.mem_size);
+                // arg->serial->print(current_mem_cam1);
+                // arg->serial->print("/");
+                // arg->serial->println(toReturn1.mem_size);
                 if (current_mem_cam1 != toReturn1.mem_size)
                 {
                     arg->b2b.state.cam1_rec = true;
@@ -106,8 +106,8 @@ static void poll_thread(CAMSystems *arg)
         }
         else
         {
-            arg->serial->println("Cam1 Invalid");
-            arg->serial->println(cam1_consecutive_invalid);
+            // arg->serial->println("Cam1 Invalid");
+            // arg->serial->println(cam1_consecutive_invalid);
             cam1_consecutive_invalid++;
             if (cam1_consecutive_invalid >= 3)
             {
@@ -120,7 +120,7 @@ static void poll_thread(CAMSystems *arg)
         toReturn2 = read_mem_cap_data(arg->cameras.cam2);
         if (toReturn2.status == 1)
         {
-            arg->serial->println("CAM2 Valid");
+            // arg->serial->println("CAM2 Valid");
             arg->b2b.state.cam2_on = true;
             cam2_consecutive_invalid = 0;
             if (current_mem_cam2 == 0)
@@ -129,9 +129,9 @@ static void poll_thread(CAMSystems *arg)
             }
             else
             {
-                arg->serial->print(current_mem_cam2);
-                arg->serial->print("/");
-                arg->serial->println(toReturn2.mem_size);
+                // arg->serial->print(current_mem_cam2);
+                // arg->serial->print("/");
+                // arg->serial->println(toReturn2.mem_size);
                 if (current_mem_cam2 != toReturn2.mem_size)
                 {
                     arg->b2b.state.cam2_rec = true;
@@ -145,8 +145,8 @@ static void poll_thread(CAMSystems *arg)
         }
         else
         {
-            arg->serial->println("CAM2 Invalid");
-            arg->serial->println(cam2_consecutive_invalid);
+            // arg->serial->println("CAM2 Invalid");
+            // arg->serial->println(cam2_consecutive_invalid);
             cam2_consecutive_invalid++;
             if (cam2_consecutive_invalid >= 3)
             {
@@ -231,7 +231,12 @@ static void video_thread(CAMSystems *arg)
         {
             continue;
         }
+
+        arg->serial->println("elem a recieved");
+
         bool a_odd = !arg->tvp.tvp.read_field_sequence_status();
+
+        arg->serial->println("field a end");
 
         // Field B
         esp_video_buffer_element *elem_b = esp_video_recv_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, pdMS_TO_TICKS(100));
