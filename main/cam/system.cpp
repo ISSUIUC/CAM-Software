@@ -223,7 +223,7 @@ static void video_thread(CAMSystems *arg)
     {
         vTaskDelay(pdMS_TO_TICKS(10));
 
-        arg->serial->println("field a and b start.");
+        // arg->serial->println("field a and b start.");
 
         // Field A
         esp_video_buffer_element *elem_a = esp_video_recv_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, pdMS_TO_TICKS(100));
@@ -324,16 +324,16 @@ static void comm_thread(CAMSystems *arg)
         {
             if (cur_time > recovery_debounce)
             {
-                arg->serial->println("Attempting recovery...");
+                // arg->serial->println("Attempting recovery...");
                 recovery_debounce = cur_time + 5000; // Only attempt recovery every 5 seconds.
                 // Attempt recovery.
                 arg->b2b.reinit();
-                arg->serial->println("Sleeping for recovery test...");
+                // arg->serial->println("Sleeping for recovery test...");
                 delay(500);
 
                 if (millis() - LAST_I2C_COMM <= I2C_RECOVERY_STATE_THRESHOLD)
                 {
-                    arg->serial->println("Successfully recovered!");
+                    // arg->serial->println("Successfully recovered!");
                     digitalWrite(LED_ORANGE, LOW);
                     fail_detect_debounce = millis() + 3000; // After successful recovery, we only detect fault after 3 more sec
                     is_in_recovery_state = false;
@@ -345,7 +345,7 @@ static void comm_thread(CAMSystems *arg)
                     arg->b2b.deinit();
                     pinMode(B2B_I2C_SCL, INPUT);
                     pinMode(B2B_I2C_SDA, INPUT);
-                    arg->serial->println("Failed to recover.");
+                    // arg->serial->println("Failed to recover.");
                 }
             }
 
@@ -375,12 +375,12 @@ static void comm_thread(CAMSystems *arg)
             is_in_recovery_state = true;
             time_entered_fallback_state = cur_time;
             digitalWrite(LED_ORANGE, HIGH);
-            arg->serial->println("I2C Comms not seen!");
+            // arg->serial->println("I2C Comms not seen!");
             arg->b2b.deinit();
 
             pinMode(B2B_I2C_SCL, INPUT);
             pinMode(B2B_I2C_SDA, INPUT);
-            arg->serial->println("Entered recovery mode");
+            // arg->serial->println("Entered recovery mode");
         }
         // Serial.println("bruh5");
         delay(10);
@@ -426,8 +426,8 @@ static void comm_thread(CAMSystems *arg)
     }
     sys.serial->println("[sys_begin] b2b init done");
 
-    sys.video = DVP_init();
-    start_dvp_capture(sys.video);
+    sys.video = DVP_init(sys.serial);
+    start_dvp_capture(sys.video, sys.serial);
 
     sys.JPEG.init();
 

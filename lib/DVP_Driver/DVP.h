@@ -10,8 +10,7 @@
 
 #include <Arduino.h>
 
-esp_video* DVP_init();
-void start_dvp_capture(esp_video *video);
-
+esp_video *DVP_init(USBCDC *serial);
+void start_dvp_capture(esp_video *video, USBCDC *serial);
 
 #endif
