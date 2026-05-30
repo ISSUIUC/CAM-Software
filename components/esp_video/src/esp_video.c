@@ -19,8 +19,21 @@
 #include "esp_private/esp_cache_private.h"
 
 #include "freertos/portmacro.h"
+#include "driver/gpio.h"
 
 #define ALLOC_RAM_ATTR (MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL)
+
+#define DEBUG_LED_PIN 51
+static inline void debug_led_blink(int count)
+{
+    for (int i = 0; i < count; i++)
+    {
+        gpio_set_level(DEBUG_LED_PIN, 1);
+        esp_rom_delay_us(100000);
+        gpio_set_level(DEBUG_LED_PIN, 0);
+        esp_rom_delay_us(100000);
+    }
+}
 
 #if CONFIG_ESP_VIDEO_CHECK_PARAMETERS
 #define CHECK_VIDEO_OBJ(v)                            \
@@ -1381,6 +1394,7 @@ struct esp_video_buffer_element *esp_video_recv_element(struct esp_video *video,
     stream = esp_video_get_stream(video, type);
     if (!stream)
     {
+        debug_led_blink(1);
         return NULL;
     }
 
@@ -1394,6 +1408,7 @@ struct esp_video_buffer_element *esp_video_recv_element(struct esp_video *video,
         ret = video->ops->notify(video, ESP_VIDEO_M2M_TRIGGER, &val);
         if (ret != ESP_OK)
         {
+            debug_led_blink(2);
             return NULL;
         }
     }
@@ -1401,6 +1416,7 @@ struct esp_video_buffer_element *esp_video_recv_element(struct esp_video *video,
     ret = xSemaphoreTake(stream->ready_sem, (TickType_t)ticks);
     if (ret != pdTRUE)
     {
+        debug_led_blink(3);
         return NULL;
     }
 
@@ -1408,6 +1424,7 @@ struct esp_video_buffer_element *esp_video_recv_element(struct esp_video *video,
     ret = video->ops->notify(video, ESP_VIDEO_DATA_PREPROCESSING, &val);
     if (ret != ESP_OK)
     {
+        debug_led_blink(4);
         return NULL;
     }
 #endif
