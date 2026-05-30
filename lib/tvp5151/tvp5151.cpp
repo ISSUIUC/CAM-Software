@@ -28,7 +28,7 @@ bool tvp5151::init()
 // 3.21.40 MSB of Device ID Register
 // 3.21.41 LSB of Device ID Register
 
-uint16_t tvp5151::read_device_id()
+uint16_t tvp5151::read_device_id(USBCDC *serial)
 {
 
     _i2c->beginTransmission(_i2c_addr);
@@ -36,8 +36,9 @@ uint16_t tvp5151::read_device_id()
     uint8_t error = _i2c->endTransmission(true);
     if (error != SUCCESS)
     {
-        Serial.println("[ERROR] I2C read_device_id reading error");
-        print_I2C_error(categorize_error(error));
+        serial->println("[ERROR] I2C read_device_id reading error");
+        // print_I2C_error(categorize_error(error));
+        serial->println(categorize_error(error));
         return -1;
     }
 
@@ -45,6 +46,8 @@ uint16_t tvp5151::read_device_id()
     uint8_t id_lsb = _i2c->read();
     uint8_t id_msb = _i2c->read();
     uint16_t device_id = (id_msb << 8) + id_lsb;
+
+    serial->println(device_id, HEX);
 
     return device_id;
 }
