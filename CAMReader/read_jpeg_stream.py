@@ -33,8 +33,9 @@ try:
     HAS_DISPLAY = True
 except ImportError:
     HAS_DISPLAY = False
-PORT = "/dev/cu.usbmodem01"
 
+# PORT = "/dev/cu.usbmodem01"
+PORT = "COM4"
 BAUD = 115200
 
 OUTPUT_SINGLE = "output.jpg"
