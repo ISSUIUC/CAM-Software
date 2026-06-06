@@ -414,8 +414,8 @@ static void comm_thread(CAMSystems *arg)
     }
 
     // Power on camera BEFORE TVP init so it locks onto a real video signal
-    // sys.cameras.cam1.set_state(CAM_STATE_ON);
-    // sys.cameras.cam2.set_state(CAM_STATE_ON);
+    sys.cameras.cam1.set_state(CAM_STATE_ON);
+    sys.cameras.cam2.set_state(CAM_STATE_ON);
 
     uint8_t tvp_res = sys.tvp.init(sys.serial);
     if (tvp_res != CAM_OK)
