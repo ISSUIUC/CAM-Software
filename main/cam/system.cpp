@@ -252,18 +252,8 @@ static void video_thread(CAMSystems *arg)
         esp_video_buffer_element *elem_b = esp_video_recv_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, pdMS_TO_TICKS(100));
         if (!elem_b)
         {
-            // Check if re-queue succeeds — if it fails, buf0 is also lost
-            esp_err_t q_ret = esp_video_queue_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, elem_a);
-            if (q_ret != ESP_OK)
-            {
-                arg->serial->println("[video] re-queue failed, restarting DVP");
-                // DVP DMA is in a broken state, full restart needed
-                esp_video_stop_capture(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE);
-                vTaskDelay(pdMS_TO_TICKS(50));
-                esp_video_queue_element_index(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, 0);
-                esp_video_queue_element_index(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, 1);
-                esp_video_start_capture(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE);
-            }
+            // clear A
+            esp_video_queue_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, elem_a);
             continue;
         }
 
