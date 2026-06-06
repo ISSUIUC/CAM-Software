@@ -83,7 +83,14 @@ esp_video *DVP_init(USBCDC *serial)
     serial->println("After esp_video_set_format");
 
     serial->println("Before esp_video_setup_buffer");
-    esp_video_setup_buffer(video, V4L2_BUF_TYPE_VIDEO_CAPTURE, V4L2_MEMORY_MMAP, 2);
+    err = esp_video_setup_buffer(video, V4L2_BUF_TYPE_VIDEO_CAPTURE, V4L2_MEMORY_MMAP, 2);
+    if (err != ESP_OK)
+    {
+        serial->println("esp_video_setup_buffer error");
+        serial->println(err);
+        while (1)
+            ;
+    }
     serial->println("After esp_video_setup_buffer");
 
     serial->println("Before esp_video_queue_element_index");
