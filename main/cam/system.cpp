@@ -182,13 +182,13 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
                             (unsigned long)esp_get_minimum_free_heap_size());
     }
 
-    arg->radio.send(buf, len);
-    while (arg->radio.isTxBusy())
-    {
-        arg->radio.update();
-        // arg->serial->print(".");
-        taskYIELD();
-    }
+    // arg->radio.send(buf, len);
+    // while (arg->radio.isTxBusy())
+    // {
+    //     arg->radio.update();
+    //     // arg->serial->print(".");
+    //     taskYIELD();
+    // }
     // arg->serial->println("TX Done");
 }
 
