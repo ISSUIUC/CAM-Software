@@ -198,13 +198,30 @@ static void video_thread(CAMSystems *arg)
     {
         vTaskDelay(pdMS_TO_TICKS(10));
 
+        bool v_lock = arg->tvp.tvp.read_vertical_sync_lock_status();
+        bool h_lock = arg->tvp.tvp.read_horizontal_sync_lock_status();
+        bool avid_signal = digitalRead(TVP5151_AVID);
+        arg->serial->print("V-Lock: ");
+        arg->serial->print(v_lock);
+        arg->serial->print(" H-Lock: ");
+        arg->serial->print(h_lock);
+        arg->serial->print(" AVID: ");
+        arg->serial->println(avid_signal);
+
+        arg->serial->println("field a and b start.");
+
         // Field A
         esp_video_buffer_element *elem_a = esp_video_recv_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, pdMS_TO_TICKS(100));
         if (!elem_a)
         {
             continue;
         }
+
+        arg->serial->println("elem a recieved");
+
         bool a_odd = !arg->tvp.tvp.read_field_sequence_status();
+
+        arg->serial->println("field a end");
 
         // Field B
         esp_video_buffer_element *elem_b = esp_video_recv_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, pdMS_TO_TICKS(100));
@@ -215,16 +232,26 @@ static void video_thread(CAMSystems *arg)
             continue;
         }
 
+        arg->serial->println("field a and b end.");
+
         bool b_odd = !arg->tvp.tvp.read_field_sequence_status();
 
+        arg->serial->println("JPEG.merge_fields() start.");
+
         arg->JPEG.merge_fields(a_odd, elem_a, elem_b);
+
+        arg->serial->println("JPEG.merge_fields() done.");
 
         esp_video_queue_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, elem_a);
         esp_video_queue_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, elem_b);
 
         arg->JPEG.clean_cache_and_memory();
 
+        arg->serial->println("JPEG.encode() start.");
+
         esp_err_t enc_ret = arg->JPEG.encode();
+
+        arg->serial->println("JPEG.encode() done.");
 
         if (enc_ret != ESP_OK)
         {
@@ -233,8 +260,8 @@ static void video_thread(CAMSystems *arg)
         }
         else
         {
-            // arg->serial->print("JPEG compressed size: ");
-            // arg->serial->println(arg->JPEG.jpg_encoded_size);
+            arg->serial->print("JPEG compressed size: ");
+            arg->serial->println(arg->JPEG.jpg_encoded_size);
 
             // arg->serial->print("*FRAME ");
             // arg->serial->println(arg->JPEG.jpg_encoded_size);
