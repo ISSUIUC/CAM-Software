@@ -127,6 +127,7 @@ void jpeg_encoder::merge_fields(bool a_odd, esp_video_buffer_element *elem_a, es
         // uint8_t *dst = merged_buf + (2 * i + 1) * row_stride;
         // uint8_t *src = even_field + i * row_stride;
         // memcpy(dst, src, row_stride);
+        // hm
     }
 
     memset(merged_buf + 239 * 718 * 2, 0, 2 * 239);
