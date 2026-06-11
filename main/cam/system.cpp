@@ -173,6 +173,8 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
     arg->serial->println(n);
     if (n == 0)
         return;
+    if (n > 100) // shouldn't happen... hmm
+        return;
 
     light_on_frame = !light_on_frame;
     digitalWrite(LED_GREEN, light_on_frame);
@@ -194,17 +196,18 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
 
     frame_id++;
 
-    // FskFrame frame = fsk_frame_build(frame_id, buf, len, pool, ptrs, n);
+    FskFrame frame = fsk_frame_build(frame_id, buf, len, pool, ptrs, n);
 
-    // if (frame.valid)
-    // {
-    //     LR2021Error err = fsk_frame_transmit(*driver, frame);
-    //     if (!err.ok())
-    //     {
-    //         arg->serial->print("[tx] burst failed: ");
-    //         arg->serial->println(err.stageStr());
-    //     }
-    // }
+    if (frame.valid)
+    {
+        arg->serial->println("Frame build successfully.");
+        // LR2021Error err = fsk_frame_transmit(*driver, frame);
+        // if (!err.ok())
+        // {
+        //     arg->serial->print("[tx] burst failed: ");
+        //     arg->serial->println(err.stageStr());
+        // }
+    }
 
     if (frame_id % 10 == 0)
     {
