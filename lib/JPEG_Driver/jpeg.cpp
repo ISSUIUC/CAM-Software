@@ -1,18 +1,21 @@
 #include "jpeg.h"
 
-/*
-*Detect if a UYVY byte stream is misaligned by 1 byte.
-        *
-            *Two heuristics are combined : **(A)VARIANCE : Natural images have higher spatial variance in luma(Y) *
-    than chroma(U / V).Correct UYVY puts Y at odd bytes;
-if even
-    bytes
-        *show more variance instead,
-        the stream is shifted by 1. *
-                *(B)CHROMA NEUTRALITY : True U / V values cluster near 128. When luma gets *misread as chroma it deviates from 128 by a scene
-            - brightness - dependent *amount — this is the direct cause of the green / pink cast you see.*Whichever hypothesis produces "chroma" bytes closer to 128 wins.**Returns 1 if a 1 - byte shift is needed,
-        0 if OK.
-                */
+/**
+ * Detect if a UYVY byte stream is misaligned by 1 byte.
+ *
+ * Two heuristics are combined:
+ *
+ *  (A) VARIANCE: Natural images have higher spatial variance in luma (Y)
+ *      than chroma (U/V). Correct UYVY puts Y at odd bytes; if even bytes
+ *      show more variance instead, the stream is shifted by 1.
+ *
+ *  (B) CHROMA NEUTRALITY: True U/V values cluster near 128. When luma gets
+ *      misread as chroma it deviates from 128 by a scene-brightness-dependent
+ *      amount — this is the direct cause of the green/pink cast you see.
+ *      Whichever hypothesis produces "chroma" bytes closer to 128 wins.
+ *
+ * Returns 1 if a 1-byte shift is needed, 0 if OK.
+ */
 static int detect_uyvy_byte_offset(const uint8_t *buf, int buf_len)
 {
     /* Use a full row (720 pixels × 2 bytes) — much more robust than 256 bytes */
