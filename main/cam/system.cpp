@@ -160,36 +160,61 @@ static void poll_thread(CAMSystems *arg)
 }
 
 bool light_on_frame = false;
-uint32_t frame_counter = 0;
+uint8_t frame_id = 0;
 
 void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
 {
-    // arg->serial->println("on_frame_ready");
+    arg->serial->println("on frame ready called!");
     if (len == 0)
+        return;
+
+    uint16_t n = fsk_frame_count(len);
+    if (n == 0)
         return;
 
     light_on_frame = !light_on_frame;
     digitalWrite(LED_GREEN, light_on_frame);
     arg->b2b.state.vmux_state = !arg->b2b.state.vmux_state;
 
-    // Heap monitoring: print every 10 frames
-    frame_counter++;
-    if (frame_counter % 10 == 0)
+    LR2021FSKDriver *driver = arg->radio.getDriver();
+
+    uint8_t (*pool)[PAYLOAD_SIZE_FSK] = (uint8_t (*)[PAYLOAD_SIZE_FSK])
+        heap_caps_malloc((size_t)n * PAYLOAD_SIZE_FSK, MALLOC_CAP_SPIRAM);
+    uint8_t **ptrs = (uint8_t **)heap_caps_malloc(n * sizeof(uint8_t *), MALLOC_CAP_SPIRAM);
+
+    if (!pool || !ptrs)
+    {
+        heap_caps_free(pool);
+        heap_caps_free(ptrs);
+        arg->serial->println("[tx] OOM building frame");
+        return;
+    }
+
+    frame_id++;
+
+    // FskFrame frame = fsk_frame_build(frame_id, buf, len, pool, ptrs, n);
+
+    // if (frame.valid)
+    // {
+    //     LR2021Error err = fsk_frame_transmit(*driver, frame);
+    //     if (!err.ok())
+    //     {
+    //         arg->serial->print("[tx] burst failed: ");
+    //         arg->serial->println(err.stageStr());
+    //     }
+    // }
+
+    if (frame_id % 10 == 0)
     {
         arg->serial->printf("[heap] frame=%lu free=%lu min=%lu\n",
-                            (unsigned long)frame_counter,
+                            (unsigned long)frame_id,
                             (unsigned long)esp_get_free_heap_size(),
                             (unsigned long)esp_get_minimum_free_heap_size());
     }
-
-    // arg->radio.send(buf, len);
-    // while (arg->radio.isTxBusy())
-    // {
-    //     arg->radio.update();
-    //     // arg->serial->print(".");
-    //     taskYIELD();
-    // }
     // arg->serial->println("TX Done");
+
+    heap_caps_free(pool);
+    heap_caps_free(ptrs);
 }
 
 static void video_thread(CAMSystems *arg)
@@ -232,26 +257,26 @@ static void video_thread(CAMSystems *arg)
             continue;
         }
 
-        arg->serial->println("field a and b end.");
+        // arg->serial->println("field a and b end.");
 
         bool b_odd = !arg->tvp.tvp.read_field_sequence_status();
 
-        arg->serial->println("JPEG.merge_fields() start.");
+        // arg->serial->println("JPEG.merge_fields() start.");
 
         arg->JPEG.merge_fields(a_odd, elem_a, elem_b);
 
-        arg->serial->println("JPEG.merge_fields() done.");
+        // arg->serial->println("JPEG.merge_fields() done.");
 
         esp_video_queue_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, elem_a);
         esp_video_queue_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, elem_b);
 
         arg->JPEG.clean_cache_and_memory();
 
-        arg->serial->println("JPEG.encode() start.");
+        // arg->serial->println("JPEG.encode() start.");
 
         esp_err_t enc_ret = arg->JPEG.encode();
 
-        arg->serial->println("JPEG.encode() done.");
+        // arg->serial->println("JPEG.encode() done.");
 
         if (enc_ret != ESP_OK)
         {
