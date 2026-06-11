@@ -18,56 +18,51 @@
  */
 static int detect_uyvy_byte_offset(const uint8_t *buf, int buf_len)
 {
-    /* Use a full row (720 pixels × 2 bytes) — much more robust than 256 bytes */
-    const int SAMPLE = 1440;
-    int n = (buf_len < SAMPLE) ? buf_len : SAMPLE;
+    const int ROW_BYTES = 1440;
+    int total_rows = buf_len / ROW_BYTES;
 
-    /* ── (A) Variance of even vs odd byte positions ──────────────────────── */
-    int64_t sum_e = 0, sumsq_e = 0;
-    int64_t sum_o = 0, sumsq_o = 0;
+    // Two rows from middle third instead of start of buffer
+    int row_a = total_rows / 3;
+    int row_b = total_rows * 2 / 3;
+    const uint8_t *rows[2] = {buf + row_a * ROW_BYTES,
+                              buf + row_b * ROW_BYTES};
 
-    for (int i = 0; i < n; i++)
-    {
-        int32_t v = buf[i];
-        if (i & 1)
-        {
-            sum_o += v;
-            sumsq_o += v * v;
-        }
-        else
-        {
-            sum_e += v;
-            sumsq_e += v * v;
-        }
-    }
-
-    int h = n / 2;
-    /* Scaled variance (proportional to true variance × h²), avoids division */
-    int64_t var_e = sumsq_e * h - sum_e * sum_e;
-    int64_t var_o = sumsq_o * h - sum_o * sum_o;
-    /* Correct UYVY: Y at odd → var_o > var_e; offset: var_e > var_o */
-    int vote_A = (var_e > var_o) ? 1 : 0;
-
-    /* ── (B) Mean |chroma_byte − 128| for each hypothesis ───────────────── */
+    int64_t sum_e = 0, sumsq_e = 0, sum_o = 0, sumsq_o = 0;
     int64_t dev_e = 0, dev_o = 0;
-    int n4 = (n / 4) * 4; /* round down to UYVY 4-byte boundary */
 
-    for (int i = 0; i < n4; i += 4)
+    for (int r = 0; r < 2; r++)
     {
-        /* Hypothesis: aligned  → U = buf[i],   V = buf[i+2]  (even bytes) */
-        dev_e += abs((int)buf[i] - 128) + abs((int)buf[i + 2] - 128);
-        /* Hypothesis: offset   → U = buf[i+1], V = buf[i+3]  (odd bytes)  */
-        dev_o += abs((int)buf[i + 1] - 128) + abs((int)buf[i + 3] - 128);
+        const uint8_t *row = rows[r];
+        int n4 = (ROW_BYTES / 4) * 4;
+        for (int i = 0; i < ROW_BYTES; i++)
+        {
+            int32_t v = row[i];
+            if (i & 1)
+            {
+                sum_o += v;
+                sumsq_o += v * v;
+            }
+            else
+            {
+                sum_e += v;
+                sumsq_e += v * v;
+            }
+        }
+        for (int i = 0; i < n4; i += 4)
+        {
+            dev_e += abs((int)row[i] - 128) + abs((int)row[i + 2] - 128);
+            dev_o += abs((int)row[i + 1] - 128) + abs((int)row[i + 3] - 128);
+        }
     }
-    /* Smaller deviation from 128 → that hypothesis is more likely correct */
+
+    int64_t count = ROW_BYTES; // total even or odd bytes across both rows
+    int64_t var_e = sumsq_e * count - sum_e * sum_e;
+    int64_t var_o = sumsq_o * count - sum_o * sum_o;
+    int vote_A = (var_e > var_o) ? 1 : 0;
     int vote_B = (dev_o < dev_e) ? 1 : 0;
 
-    /* Both agree → confident. They disagree (borderline scene) → trust variance. */
-    if (vote_A == vote_B)
-        return vote_A;
-    return vote_A; /* tiebreaker: variance is more scene-independent */
+    return (vote_A == vote_B) ? vote_A : vote_A; // variance wins ties
 }
-
 void jpeg_encoder::init()
 {
     init_jpeg_engine();
@@ -113,24 +108,37 @@ void jpeg_encoder::merge_fields(bool a_odd, esp_video_buffer_element *elem_a, es
     uint8_t *odd_field = a_odd ? elem_a->buffer : elem_b->buffer;
     uint8_t *even_field = a_odd ? elem_b->buffer : elem_a->buffer;
 
-    int offset = detect_uyvy_byte_offset(odd_field, 720 * 2);
+    int offset = detect_uyvy_byte_offset(odd_field, 720 * 240 * 2);
 
-    const int row_stride = 718 * 2;
+    // const int row_stride = 718 * 2;
+    // for (int i = 0; i < 240; i++)
+    // {
+    //     // copy from original at 0, 720, ...
+    //     // to 0, 718, ...
+    //     int orig_pos = i * 2 * 720 + offset;
+    //     int new_pos = i * 718 * 2;
+
+    //     memcpy(merged_buf + new_pos, odd_field + orig_pos, row_stride);
+    //     // uint8_t *dst = merged_buf + (2 * i + 1) * row_stride;
+    //     // uint8_t *src = even_field + i * row_stride;
+    //     // memcpy(dst, src, row_stride);
+    //     // hm
+    // }
+
+    // memset(merged_buf + 239 * 718 * 2, 0, 2 * 239);
+
+    const int src_stride = 720 * 2; // 1440 bytes/row in source
+    const int dst_stride = 360 * 2; //  720 bytes/row in dest
+
     for (int i = 0; i < 240; i++)
     {
-        // copy from original at 0, 720, ...
-        // to 0, 718, ...
-        int orig_pos = i * 2 * 720 + offset;
-        int new_pos = i * 718 * 2;
-
-        memcpy(merged_buf + new_pos, odd_field + orig_pos, row_stride);
-        // uint8_t *dst = merged_buf + (2 * i + 1) * row_stride;
-        // uint8_t *src = even_field + i * row_stride;
-        // memcpy(dst, src, row_stride);
-        // hm
+        const uint8_t *src_row = odd_field + i * src_stride + offset;
+        uint8_t *dst_row = merged_buf + i * dst_stride;
+        for (int j = 0; j < 180; j++)
+        {                                                // 180 output macropixels
+            memcpy(dst_row + j * 4, src_row + j * 8, 4); // skip every other macropixel
+        }
     }
-
-    memset(merged_buf + 239 * 718 * 2, 0, 2 * 239);
 }
 
 void jpeg_encoder::clean_cache_and_memory()
