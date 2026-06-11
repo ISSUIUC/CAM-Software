@@ -169,8 +169,8 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
         return;
 
     uint16_t n = fsk_frame_count(len);
-    arg->serial->print("[tx] fsk frame count output: ");
-    arg->serial->println(n);
+    // arg->serial->print("[tx] fsk frame count output: ");
+    // arg->serial->println(n);
     if (n == 0)
         return;
     if (n > 100) // shouldn't happen... hmm
@@ -200,13 +200,13 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
 
     if (frame.valid)
     {
-        arg->serial->println("Frame build successfully.");
-        // LR2021Error err = fsk_frame_transmit(*driver, frame);
-        // if (!err.ok())
-        // {
-        //     arg->serial->print("[tx] burst failed: ");
-        //     arg->serial->println(err.stageStr());
-        // }
+        arg->serial->println("[tx] Frame build successfully.");
+        LR2021Error err = fsk_frame_transmit(*driver, frame);
+        if (!err.ok())
+        {
+            arg->serial->print("[tx] burst failed: ");
+            arg->serial->println(err.stageStr());
+        }
     }
 
     if (frame_id % 10 == 0)
