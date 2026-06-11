@@ -8,7 +8,7 @@ EAGLESystems sys;
 
 #ifdef USE_USB_DEBUG
 USBCDC USBSerial;
-#endif
+#endif // ajdsfasf
 
 static FskReassemblyState s_reassembler;
 static uint8_t *output_buffer = nullptr;
