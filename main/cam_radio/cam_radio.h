@@ -3,25 +3,31 @@
 #include <pins.h>
 #include <SPI.h>
 
-enum CAMRadioStatus {
+#include "fsk.h"
+#include "fsk_framer.h"
+#include "fsk_reassembler.h"
+
+enum CAMRadioStatus
+{
     CAMRADIO_OK = 0,
     CAMRADIO_INIT_ERR = 1,
 };
 
-class CAMRadio {
+class CAMRadio
+{
 private:
     Si4463Nuke _radio;
 
 public:
     // Initialize radio hardware. Call after SPI.begin().
-    CAMRadioStatus init(SPIClass& spi);
+    CAMRadioStatus init(SPIClass &spi);
 
     // Transmit arbitrary-length data (>50KB supported, auto-fragmented).
     // Buffer must stay valid until isTxBusy() returns false.
-    CAMRadioStatus send(const uint8_t* data, uint32_t len);
+    CAMRadioStatus send(const uint8_t *data, uint32_t len);
 
     // Start receiving into provided buffer.
-    void startRx(uint8_t* buf, uint32_t bufLen);
+    void startRx(uint8_t *buf, uint32_t bufLen);
 
     // Poll radio state machine. Call every loop iteration during TX or RX.
     void update();
@@ -39,5 +45,5 @@ public:
     int getRSSI() const;
 
     // Access underlying driver for debug/advanced use.
-    Si4463Nuke* getDriver() { return &_radio; }
+    Si4463Nuke *getDriver() { return &_radio; }
 };
