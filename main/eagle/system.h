@@ -14,9 +14,10 @@
 /* Begin all system functions, including init. */
 [[noreturn]] void sys_begin();
 
-struct EAGLESystems {
+struct EAGLESystems
+{
     CAMRadio radio;
-    #ifdef USE_USB_DEBUG
-    USBCDC* serial;
-    #endif
+#ifdef USE_USB_DEBUG
+    USBCDC *serial;
+#endif
 };
