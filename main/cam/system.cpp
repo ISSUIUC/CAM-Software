@@ -169,6 +169,8 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
         return;
 
     uint16_t n = fsk_frame_count(len);
+    arg->serial->print("[tx] fsk frame count output: ");
+    arg->serial->println(n);
     if (n == 0)
         return;
 
