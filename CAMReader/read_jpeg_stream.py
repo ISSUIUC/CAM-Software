@@ -72,7 +72,7 @@ def extract_jpegs(buffer: bytes):
 
     return results
 
-
+# 
 def decode_jpeg(jpeg_bytes: bytes):
     """
     Decode JPEG to BGR numpy array. Tries Pillow first (lenient),
