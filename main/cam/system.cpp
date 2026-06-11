@@ -202,6 +202,7 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
     {
         arg->serial->println("[tx] Frame build successfully.");
         LR2021Error err = fsk_frame_transmit(*driver, frame);
+
         if (!err.ok())
         {
             arg->serial->print("[tx] burst failed: ");
