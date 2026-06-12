@@ -34,7 +34,7 @@ private:
         .buffer_direction = JPEG_ENC_ALLOC_INPUT_BUFFER,
     };
 
-    int jpg_output_size = 360 * 240 * 2; // "in theory we could set this to some valid fraction of the original size, but rn idc" - Michael
+    int jpg_output_size = 360 * 240 * 2 / 5; // eddie - we can just divde this by 5 since a compression ratio of 10 to 1 is good // "in theory we could set this to some valid fraction of the original size, but rn idc" - Michael
     int merged_size = 360 * 240 * 2;
 
     jpeg_encoder_handle_t encoder_engine;
