@@ -110,35 +110,40 @@ void jpeg_encoder::merge_fields(bool a_odd, esp_video_buffer_element *elem_a, es
 
     int offset = detect_uyvy_byte_offset(odd_field, 720 * 240 * 2);
 
-    // const int row_stride = 718 * 2;
-    // for (int i = 0; i < 240; i++)
-    // {
-    //     // copy from original at 0, 720, ...
-    //     // to 0, 718, ...
-    //     int orig_pos = i * 2 * 720 + offset;
-    //     int new_pos = i * 718 * 2;
+    const int TEMP_SIZE = 720 * 480 * 2;
+    uint8_t *temp = (uint8_t *)heap_caps_malloc(TEMP_SIZE, MALLOC_CAP_SPIRAM);
+    if (!temp)
+    {
+        Serial.println("merge_fields: temp alloc failed");
+        return;
+    }
 
-    //     memcpy(merged_buf + new_pos, odd_field + orig_pos, row_stride);
-    //     // uint8_t *dst = merged_buf + (2 * i + 1) * row_stride;
-    //     // uint8_t *src = even_field + i * row_stride;
-    //     // memcpy(dst, src, row_stride);
-    //     // hm
-    // }
-
-    // memset(merged_buf + 239 * 718 * 2, 0, 2 * 239);
-
-    const int src_stride = 720 * 2; // 1440 bytes/row in source
-    const int dst_stride = 360 * 2; //  720 bytes/row in dest
-
+    const int row_stride = 718 * 2;
     for (int i = 0; i < 240; i++)
     {
-        const uint8_t *src_row = odd_field + i * src_stride + offset;
-        uint8_t *dst_row = merged_buf + i * dst_stride;
+        // copy from original at 0, 720, ...
+        // to 0, 718, ...
+        int orig_pos = i * 2 * 720 + offset;
+        int new_pos = i * 718 * 2;
+
+        memcpy(temp + new_pos, odd_field + orig_pos, row_stride);
+        // hm, magic
+    }
+
+    memset(temp + 239 * 718 * 2, 0, 2 * 239);
+
+    const int dst_row = 360 * 2;
+    for (int i = 0; i < 240; i++)
+    {
+        const uint8_t *src = temp + i * 720 * 2;
+        uint8_t *dst = merged_buf + i * dst_row;
         for (int j = 0; j < 180; j++)
-        {                                                // 180 output macropixels
-            memcpy(dst_row + j * 4, src_row + j * 8, 4); // skip every other macropixel
+        {
+            memcpy(dst + j * 4, src + j * 8, 4);
         }
     }
+
+    heap_caps_free(temp);
 }
 
 void jpeg_encoder::clean_cache_and_memory()
