@@ -133,14 +133,17 @@ void jpeg_encoder::merge_fields(bool a_odd, esp_video_buffer_element *elem_a, es
 
     memset(temp + 239 * 718 * 2, 0, 2 * 239);
 
-    const int dst_row = 360 * 2;
+    const int dst_row = 360 * 1; // 360 bytes per row (1 byte per pixel, grayscale)
     for (int i = 0; i < 240; i++)
     {
         const uint8_t *src = temp + i * 720 * 2;
         uint8_t *dst = merged_buf + i * dst_row;
-        for (int j = 0; j < 180; j++) // 180 macro pixels (1 macro pixel = 2 pxiels) = 360 pixels
+        for (int j = 0; j < 180; j++) // 180 macro pixels (1 macro pixel = 2 pixels) = 360 pixels
         {
-            memcpy(dst + j * 4, src + j * 8, 4); // yuyv encodes 1 pixel every 2 bytes, 4 bytes every 2 pixels
+            // yuyv encodes 1 pixel every 2 bytes, 4 bytes every 2 pixels
+            // UYVY macropixel layout: [U, Y0, V, Y1] — extract Y only
+            dst[j * 2] = src[j * 8 + 1];     // Y0
+            dst[j * 2 + 1] = src[j * 8 + 3]; // Y1
         }
     }
 
