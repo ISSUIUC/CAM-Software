@@ -118,6 +118,7 @@ void jpeg_encoder::merge_fields(bool a_odd, esp_video_buffer_element *elem_a, es
         return;
     }
 
+    // fix diagonization (magic)
     const int row_stride = 718 * 2;
     for (int i = 0; i < 240; i++)
     {
@@ -137,9 +138,9 @@ void jpeg_encoder::merge_fields(bool a_odd, esp_video_buffer_element *elem_a, es
     {
         const uint8_t *src = temp + i * 720 * 2;
         uint8_t *dst = merged_buf + i * dst_row;
-        for (int j = 0; j < 180; j++)
+        for (int j = 0; j < 180; j++) // 180 macro pixels (1 macro pixel = 2 pxiels) = 360 pixels
         {
-            memcpy(dst + j * 4, src + j * 8, 4);
+            memcpy(dst + j * 4, src + j * 8, 4); // yuyv encodes 1 pixel every 2 bytes, 4 bytes every 2 pixels
         }
     }
 
