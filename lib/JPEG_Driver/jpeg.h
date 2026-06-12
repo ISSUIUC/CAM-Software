@@ -21,8 +21,8 @@ private:
     jpeg_encode_cfg_t enc_config = {
         .height = 240,
         .width = 360,
-        .src_type = JPEG_ENCODE_IN_FORMAT_GRAY,
-        .sub_sample = JPEG_DOWN_SAMPLING_GRAY, // this works for some reason
+        .src_type = JPEG_ENCODE_IN_FORMAT_YUV422,
+        .sub_sample = JPEG_DOWN_SAMPLING_YUV422, // this works for some reason
         .image_quality = 40,
     };
 
@@ -34,8 +34,8 @@ private:
         .buffer_direction = JPEG_ENC_ALLOC_INPUT_BUFFER,
     };
 
-    int jpg_output_size = 360 * 240 * 1 / 5; // eddie - we can just divde this by 5 since a compression ratio of 10 to 1 is good // "in theory we could set this to some valid fraction of the original size, but rn idc" - Michael
-    int merged_size = 360 * 240 * 1;
+    int jpg_output_size = 360 * 240 * 2 / 5; // eddie - we can just divde this by 5 since a compression ratio of 10 to 1 is good // "in theory we could set this to some valid fraction of the original size, but rn idc" - Michael
+    int merged_size = 360 * 240 * 2;
 
     jpeg_encoder_handle_t encoder_engine;
 
