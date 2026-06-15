@@ -8,7 +8,7 @@
 #define FSK_RX_FRAME_TIMEOUT_MS 150u
 
 // Maximum JPEG frame size the reassembler will accept.
-#define FSK_MAX_RX_FRAME_SIZE 2 * 720 * 480
+#define FSK_MAX_RX_FRAME_SIZE 2 * 720 * 240
 
 #define FSK_RX_BYTE_FIELD_LENGTH 256u
 
