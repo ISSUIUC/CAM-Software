@@ -221,31 +221,6 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
 
     heap_caps_free(pool);
     heap_caps_free(ptrs);
-
-    RSLayout layout;
-    layout.compute(len, FSK_FRAG_DATA_SIZE);
-    uint16_t numParity = layout.numBlocks * RS_PARITY_SHARDS;
-
-    uint8_t *parity_flat = (uint8_t *)heap_caps_malloc(
-        (uint32_t)numParity * FSK_FRAG_DATA_SIZE, MALLOC_CAP_SPIRAM);
-    uint8_t (*pPool)[PAYLOAD_SIZE_FSK] = (uint8_t (*)[PAYLOAD_SIZE_FSK])
-        heap_caps_malloc((size_t)numParity * PAYLOAD_SIZE_FSK, MALLOC_CAP_SPIRAM);
-    uint8_t **pPtrs = (uint8_t **)heap_caps_malloc(numParity * sizeof(uint8_t *), MALLOC_CAP_SPIRAM);
-
-    if (parity_flat && pPool && pPtrs)
-    {
-        FskFrame pFrame = fsk_parity_frame_build(
-            frame_id, buf, len, layout, parity_flat, pPool, pPtrs);
-        if (pFrame.valid)
-        {
-            LR2021Error err = fsk_frame_transmit(*driver, pFrame);
-            if (!err.ok())
-                arg->serial->printf("[tx] parity burst failed: %s\n", err.stageStr());
-        }
-    }
-    heap_caps_free(parity_flat);
-    heap_caps_free(pPool);
-    heap_caps_free(pPtrs);
 }
 
 static void video_thread(CAMSystems *arg)
