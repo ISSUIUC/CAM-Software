@@ -51,14 +51,14 @@ static void cmd_thread(CAMSystems *arg)
                 break;
             }
             case (uint8_t)B2BCommand::MUX_0:
-                // arg->serial->println("proc cmd: MUX_0");
-                // arg->tvp.source_select(CAM1);
-                // arg->b2b.state.vmux_state = false;
+                arg->serial->println("proc cmd: MUX_0");
+                arg->tvp.source_select(CAM1);
+                arg->b2b.state.vmux_state = false;
                 break;
             case (uint8_t)B2BCommand::MUX_1:
-                // arg->serial->println("proc cmd: MUX_1");
-                // arg->tvp.source_select(CAM2);
-                // arg->b2b.state.vmux_state = true;
+                arg->serial->println("proc cmd: MUX_1");
+                arg->tvp.source_select(CAM2);
+                arg->b2b.state.vmux_state = true;
                 break;
             default:
                 break;
@@ -317,7 +317,7 @@ static void video_thread(CAMSystems *arg)
 }
 
 #define I2C_RECOVERY_STATE_THRESHOLD 3000
-#define I2C_RECOVERY_FALLBACK_TIME 180000 / 6
+#define I2C_RECOVERY_FALLBACK_TIME 180000 // 180 seconds
 uint32_t LAST_I2C_COMM;
 static void comm_thread(CAMSystems *arg)
 {
