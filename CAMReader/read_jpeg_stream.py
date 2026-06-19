@@ -3,15 +3,16 @@ Read JPEG frames from ESP32-P4 over serial.
 
 Expected serial format:
 
-    *FRAME <byte_count>\n
-    <exactly byte_count bytes of JPEG data>
-    **DONE\n
+*FRAME \n
+
+**DONE\n
 
 Writes each frame to:
-    output.jpg  (latest frame)
-    output_stream.mjpg (continuous stream)
+output.jpg (latest frame)
+output_stream.mjpg (continuous stream)
 
 Optional: live preview via OpenCV.
+Optional: web MJPEG stream via Flask at http://0.0.0.0:5002/video_feed
 """
 
 import argparse
@@ -25,14 +26,18 @@ import numpy as np
 from PIL import Image, ImageFile
 from combine_images import re_combine
 
+from flask import Flask, Response, render_template_string
+from flask_cors import CORS
+from gevent.pywsgi import WSGIServer
+
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 try:
     import cv2
-
     HAS_DISPLAY = True
 except ImportError:
     HAS_DISPLAY = False
+
 # PORT = "/dev/cu.usbmodem01"
 PORT = "COM4"
 
@@ -44,11 +49,38 @@ OUTPUT_STREAM = "output_stream.mjpg"
 PREVIEW_WINDOW = "JPEG Preview"
 PREVIEW_COMBINED = "JPEG COMBINED"
 
+WEB_PORT = 5002
+
+# ------------------------------------------------------------
+# Shared latest frame (thread-safe)
+# ------------------------------------------------------------
+
+latest_frame_lock = threading.Lock()
+latest_frame: bytes = b""
+
+INDEX_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ESP32-P4 Live Stream</title>
+  <style>
+    body { margin: 0; background: #111; display: flex; flex-direction: column;
+           align-items: center; justify-content: center; height: 100vh; color: #eee;
+           font-family: monospace; }
+    img  { max-width: 100%; max-height: 90vh; border: 2px solid #444; }
+    h2   { margin-bottom: 12px; letter-spacing: 2px; }
+  </style>
+</head>
+<body>
+  <h2>ESP32-P4 LIVE</h2>
+  <img src="/video_feed" alt="MJPEG Stream" />
+</body>
+</html>
+"""
 
 # ------------------------------------------------------------
 # JPEG helpers
 # ------------------------------------------------------------
-
 
 def extract_jpegs(buffer: bytes):
     """
@@ -72,25 +104,23 @@ def extract_jpegs(buffer: bytes):
 
     return results
 
-# 
+
 def decode_jpeg(jpeg_bytes: bytes):
     """
     Decode JPEG to BGR numpy array. Tries Pillow first (lenient),
     falls back to OpenCV.
     """
-    # Pillow is much more lenient with corrupt JPEGs
     try:
         pil_img = Image.open(io.BytesIO(jpeg_bytes))
-        pil_img.load()  # force decode
+        pil_img.load()
         img = np.array(pil_img)
         if len(img.shape) == 3 and img.shape[2] == 3:
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-            re_combined_img = re_combine(img)
+        re_combined_img = re_combine(img)
         return img, re_combined_img
     except Exception as e:
         print(f"  Pillow decode failed: {e}")
 
-    # Fallback to OpenCV
     arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
     return cv2.imdecode(arr, cv2.IMREAD_COLOR), 69
 
@@ -99,13 +129,11 @@ def decode_jpeg(jpeg_bytes: bytes):
 # Serial worker
 # ------------------------------------------------------------
 
-
 def serial_worker(ser, frame_queue, stop_event):
     frame_count = 0
 
     try:
         while not stop_event.is_set():
-
             line = ser.readline().decode("utf-8", errors="ignore").strip()
             print(f"< {line}")
 
@@ -118,7 +146,6 @@ def serial_worker(ser, frame_queue, stop_event):
                 frame_size = int(parts[1])
                 print(f"Got *FRAME, expecting {frame_size} bytes")
 
-                # Read exactly frame_size bytes
                 buffer = bytearray()
                 remaining = frame_size
                 while remaining > 0:
@@ -130,7 +157,6 @@ def serial_worker(ser, frame_queue, stop_event):
 
                 print(f"Received {len(buffer)} / {frame_size} bytes")
 
-                # Read until **DONE
                 while True:
                     done_line = ser.readline().decode("utf-8", errors="ignore").strip()
                     if done_line == "**DONE":
@@ -138,10 +164,8 @@ def serial_worker(ser, frame_queue, stop_event):
 
                 jpeg = bytes(buffer)
 
-                # Diagnostic: raw buffer start
                 print(f"Raw first 16 bytes: {jpeg[:16].hex(' ')}")
 
-                # If JPEG should start at byte 0 but doesn't, the data is corrupted from the start
                 if jpeg[:2] != b"\xff\xd8":
                     print(
                         f"WARNING: buffer does NOT start with FF D8 — data is corrupt or mis-framed"
@@ -150,19 +174,17 @@ def serial_worker(ser, frame_queue, stop_event):
                 frame_count += 1
                 print(f"Frame {frame_count}: {len(jpeg)} bytes")
 
-                # Save raw buffer as-is (don't trim — let us inspect the actual data)
-                # with open(OUTPUT_SINGLE, "wb") as f:
-                #     f.write(jpeg)
-                # Also save numbered copy for comparison
-                # with open(f"frame_{frame_count:04d}.bin", "wb") as f:
-                #     f.write(jpeg)
-
+                # Push to local display queue
                 if not frame_queue.full():
                     try:
                         frame_queue.put_nowait(jpeg)
-
                     except queue.Full:
                         pass
+
+                # Push to web streaming slot (drop oldest, keep latest)
+                global latest_frame
+                with latest_frame_lock:
+                    latest_frame = jpeg
 
     except Exception as e:
         print("Serial error:", e)
@@ -172,9 +194,60 @@ def serial_worker(ser, frame_queue, stop_event):
 
 
 # ------------------------------------------------------------
-# Main
+# Flask web server
 # ------------------------------------------------------------
 
+app = Flask(__name__)
+CORS(app)
+
+
+@app.route("/")
+def index():
+    return render_template_string(INDEX_HTML)
+
+
+def generate_mjpeg():
+    """Generator that yields the latest JPEG as an MJPEG boundary stream."""
+    while True:
+        with latest_frame_lock:
+            frame = latest_frame
+
+        if frame:
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
+            )
+        else:
+            # No frame yet — yield a small delay to avoid busy-spin
+            time.sleep(0.05)
+            continue
+
+        time.sleep(0.033)  # ~30 fps cap for web clients
+
+
+@app.route("/video_feed")
+def video_feed():
+    return Response(
+        generate_mjpeg(),
+        mimetype="multipart/x-mixed-replace; boundary=frame",
+    )
+
+
+@app.route("/ping")
+def ping():
+    return "OK"
+
+
+def web_server_worker():
+    """Runs the Flask/gevent WSGI server in a background daemon thread."""
+    print(f"[web] Starting MJPEG server at http://0.0.0.0:{WEB_PORT}")
+    http_server = WSGIServer(("0.0.0.0", WEB_PORT), app)
+    http_server.serve_forever()
+
+
+# ------------------------------------------------------------
+# Main
+# ------------------------------------------------------------
 
 def main():
     stream_file = open(OUTPUT_STREAM, "wb")
@@ -188,12 +261,17 @@ def main():
     frame_queue = queue.Queue(maxsize=2)
     stop_event = threading.Event()
 
+    # --- Serial worker thread ---
     worker = threading.Thread(
         target=serial_worker,
         args=(ser, frame_queue, stop_event),
         daemon=True,
     )
     worker.start()
+
+    # --- Web server thread ---
+    web_thread = threading.Thread(target=web_server_worker, daemon=True)
+    web_thread.start()
 
     if HAS_DISPLAY:
         cv2.namedWindow(PREVIEW_WINDOW, cv2.WINDOW_NORMAL)
@@ -206,14 +284,12 @@ def main():
         last_img = None
 
         while not stop_event.is_set():
-
             if HAS_DISPLAY:
                 chunk = None
 
                 while True:
                     try:
                         chunk = frame_queue.get_nowait()
-                        # Append to MJPEG stream
                         stream_file.write(chunk)
                         stream_file.flush()
                     except queue.Empty:
@@ -225,7 +301,8 @@ def main():
                         last_img = img
                     else:
                         print(
-                            f"cv2.imdecode FAILED for {len(chunk)} byte frame (first 4: {chunk[:4].hex(' ')})"
+                            f"cv2.imdecode FAILED for {len(chunk)} byte frame "
+                            f"(first 4: {chunk[:4].hex(' ')})"
                         )
 
                 if last_img is not None:
