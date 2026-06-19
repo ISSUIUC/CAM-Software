@@ -15,16 +15,20 @@ static uint8_t SYNC_WORD_FSK[] = {0x01, 0x23, 0x45, 0x67,
 static const char *CALL_SIGN = "KE2CNQ";
 static const int IRQ_PIN = 9;
 
-#define FREQ_915 915.0 // mhz
-#define FREQ_434 434.0 // mhz
+#define FREQ_915 915.0  // mhz
+#define FREQ_434 434.0  // mhz
+#define FREQ_447 447.15 // mhz
 
-#define FREQ FREQ_434     // MHz
-#define FREQ_FSK FREQ_434 // MHz
+#define FREQ_FSK FREQ_447 // MHz
 #define BITRATE_FLRC 2600 // Kbps -> reference table 18-1 on datahseet
 
 #define BITRATE_FSK_434 1000
 #define RX_BANDWIDTH_FSK_434 2222.22 // khz Table 11-2
 #define FREQ_DEV_FSK_434 250.0       // khz
+
+#define BITRATE_FSK_447 2000
+#define RX_BANDWIDTH_FSK_447 1111.10
+#define FREQ_DEV_FSK_447 500
 
 #define BITRATE_FSK_915 2000
 #define RX_BANDWIDTH_FSK_915 1111.10 // khz Table 11-2

@@ -26,10 +26,12 @@ LR2021Error LR2021FSKDriver::init(SPIClass &spi)
 
     // use 434 configureations for now.
     int state = 0;
-    if (FREQ_FSK == FREQ_434)
-        state = radio->beginGFSK(FREQ_FSK, BITRATE_FSK_434, FREQ_DEV_FSK_434, RX_BANDWIDTH_FSK_434, POWER, PREAMBLE_LENGTH, XTAL_MODE);
-    else
+    if (FREQ_FSK == FREQ_447)
+        state = radio->beginGFSK(FREQ_FSK, BITRATE_FSK_447, FREQ_DEV_FSK_447, RX_BANDWIDTH_FSK_447, POWER, PREAMBLE_LENGTH, XTAL_MODE);
+    else if (FREQ_FSK == FREQ_915)
         state = radio->beginGFSK(FREQ_FSK, BITRATE_FSK_915, FREQ_DEV_FSK_915, RX_BANDWIDTH_FSK_915, POWER, PREAMBLE_LENGTH, XTAL_MODE);
+    else
+        state = radio->beginGFSK(FREQ_FSK, BITRATE_FSK_434, FREQ_DEV_FSK_434, RX_BANDWIDTH_FSK_434, POWER, PREAMBLE_LENGTH, XTAL_MODE);
 
     if (state != RADIOLIB_ERR_NONE)
         return LR2021Error(LR2021_ERR_FSK_INIT_FAILED, state);
