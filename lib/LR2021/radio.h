@@ -26,9 +26,9 @@ static const int IRQ_PIN = 9;
 #define RX_BANDWIDTH_FSK_434 2222.22 // khz Table 11-2
 #define FREQ_DEV_FSK_434 250.0       // khz
 
-#define BITRATE_FSK_447 2000
-#define RX_BANDWIDTH_FSK_447 1111.10
-#define FREQ_DEV_FSK_447 500
+#define BITRATE_FSK_447 1000
+#define RX_BANDWIDTH_FSK_447 2222.22
+#define FREQ_DEV_FSK_447 250
 
 #define BITRATE_FSK_915 2000
 #define RX_BANDWIDTH_FSK_915 1111.10 // khz Table 11-2
