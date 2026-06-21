@@ -14,13 +14,18 @@
 #include <eagle/system.h>
 #endif
 
-#define CORE_0 0
-#define CORE_1 1
+
 
 void setup()
 {
+
+    tone(BUZZER_PIN, 2700, 60);
+    delay(80);
+    tone(BUZZER_PIN, 2700, 60);
+
     #ifdef IS_CAM
-    Wire.begin(I2C_SDA, I2C_SCL);
+    Wire.setPins(I2C_SDA, I2C_SCL);
+    Wire.begin();
     #endif
 
     SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);

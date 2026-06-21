@@ -9,20 +9,21 @@
 #include "../components/esp_video/private_include/esp_video_device_internal.h"
 #include "esp_cache.h"
 
-class jpeg_encoder {
+class jpeg_encoder
+{
 
-    private:
+private:
     jpeg_encode_engine_cfg_t encode_eng_cfg = {
         .intr_priority = 0,
         .timeout_ms = 40,
     };
 
     jpeg_encode_cfg_t enc_config = {
-        .height = 480,
-        .width = 720,
+        .height = 240,
+        .width = 360,
         .src_type = JPEG_ENCODE_IN_FORMAT_YUV422,
         .sub_sample = JPEG_DOWN_SAMPLING_YUV422, // this works for some reason
-        .image_quality = 80,
+        .image_quality = 40,
     };
 
     jpeg_encode_memory_alloc_cfg_t mem_cfg_output = {
@@ -33,8 +34,8 @@ class jpeg_encoder {
         .buffer_direction = JPEG_ENC_ALLOC_INPUT_BUFFER,
     };
 
-    int jpg_output_size = 720 * 480 * 2; // "in theory we could set this to some valid fraction of the original size, but rn idc" - Michael
-    int merged_size = 720 * 480 * 2;
+    int jpg_output_size = 360 * 240 * 2 / 5; // eddie - we can just divde this by 5 since a compression ratio of 10 to 1 is good // "in theory we could set this to some valid fraction of the original size, but rn idc" - Michael
+    int merged_size = 360 * 240 * 2;
 
     jpeg_encoder_handle_t encoder_engine;
 
@@ -43,13 +44,12 @@ class jpeg_encoder {
 
     uint8_t *merged_buf;
 
-
-    public:
+public:
     uint32_t jpg_encoded_size = 0;
     uint8_t *jpg_encoder_output_buf;
 
     void init();
-    
+
     void init_jpeg_engine();
     void init_jpeg_output_buf();
     void init_jpeg_merged_buffer();

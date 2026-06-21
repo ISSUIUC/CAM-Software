@@ -9,10 +9,9 @@
 
 #include "DVP.h"
 #include "tvpcontroller.h"
-#include "JPEG.h"
+#include "jpeg.h"
 #include "cam_radio/cam_radio.h"
 #include "SPI.h"
-
 
 #include "esp_cache.h"
 #include "esp_video_init.h"
@@ -25,12 +24,13 @@
 /* Begin all system functions, including init. */
 [[noreturn]] void sys_begin();
 
-struct CAMSystems {
+struct CAMSystems
+{
     TVPController tvp;
     Cameras cameras;
     B2BHandler b2b;
-    USBCDC* serial;
-    esp_video* video;
+    USBCDC *serial;
+    esp_video *video;
     jpeg_encoder JPEG;
     CAMRadio radio;
 };
