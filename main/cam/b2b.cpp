@@ -31,7 +31,7 @@ bool B2BHandler::on_request(i2c_slave_dev_handle_t i2c_slave, const i2c_slave_re
     LAST_I2C_COMM = millis();
 
     bbl = !bbl;
-    digitalWrite(LED_GREEN, bbl);
+    digitalWrite(LED_ORANGE, bbl);
 
     uint8_t buf[3] = {self->state.encode(), 0, 0};
     uint32_t write_len = 0;

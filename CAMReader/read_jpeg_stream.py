@@ -38,8 +38,8 @@ try:
 except ImportError:
     HAS_DISPLAY = False
 
-# PORT = "/dev/cu.usbmodem01"
-PORT = "COM3"
+PORT = "/dev/cu.usbmodem01"
+# PORT = "COM3"
 
 BAUD = 115200
 
