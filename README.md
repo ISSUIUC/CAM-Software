@@ -261,10 +261,10 @@ Also, if you have `uv` installed, you can run `uv run read_jpeg_stream.py` inste
 
 ### During Flight
 
-1. **CAM captures video** - TVP5151 continuously converts analog NTSC to YUV422 (720×480 @ ~30fps)
+1. **CAM captures video** - TVP5151 continuously converts analog NTSC to YUV422 (360x240 @ ~30fps)
 2. **DVP DMA transfer** - Video frames automatically transferred to ESP32-P4 memory via DMA
 3. **Encoding** - JPEG encodes video frames (stride correction, byte-offset handling)
-4. **Fragmentation** - JPEG frames (typically 15-25 KB) are split into 255-byte packets
+4. **Fragmentation** - JPEG frames (typically 9-12 KB) are split into 255-byte packets
 5. **Error correction** - Reed-Solomon codes added for FEC
 6. **Transmission** - Packets transmitted via LR2021 at 1 Mbps FSK (~8 fps achieved)
 
@@ -310,15 +310,11 @@ This is a known bug in the esp-idf toolchain. If you see a flashing dialog, the 
 - Verify both CAM and EAGLE are configured for same frequency (434 MHz default)
 - Monitor CAM via USB: `pio device monitor` and look for transmission errors
 - Verify antenna connections
+- **Sometimes the Lr2021 chip doesn't initalize, will need to power cycle**
 
 #### "Corrupted video frames (purple/green images)"
 This was caused by byte offset errors in YUV422 → JPEG conversion. The firmware now includes automatic byte-offset detection and correction.
 
-#### "Video stutters or has low frame rate"
-- Check JPEG quality settings in `main/cam/system.cpp`
-- Verify JPEG encoder is not bottlenecked (use terminal output statistics)
-- Check radio link quality (interference, distance)
-- Look for Reed-Solomon FEC corrections (indicates packet loss)
 
 ## Hardware Components
 
@@ -328,12 +324,4 @@ This was caused by byte offset errors in YUV422 → JPEG conversion. The firmwar
 - **USB**: CH340 serial-to-USB adapter
 - **Video Encoders**: Hardware JPEG + software stride correction
 - **Power**: 1.8V, 3.3V, 5.5V rails with buck converters
-
-## Development Notes
-
-- The code uses FreeRTOS tasks for concurrent video capture, encoding, and transmission
-- DVP uses DMA for efficient video frame transfers
-- JPEG encoding uses hardware acceleration on ESP32-P4
-- Reed-Solomon FEC uses 256-byte blocks with adjustable redundancy
-- The system achieves ~877 Kbps transmission rates with ~8 fps video delivery
 
