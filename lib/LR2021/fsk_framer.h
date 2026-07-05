@@ -5,6 +5,8 @@
 #include <string.h>
 #include "fsk.h" // PAYLOAD_SIZE_FSK
 
+#include "RSCodec.h"
+
 #define FSK_FRAG_HDR_SIZE 7u
 #define FSK_FRAG_DATA_SIZE (PAYLOAD_SIZE_FSK - FSK_FRAG_HDR_SIZE)
 
@@ -71,6 +73,44 @@ static inline FskFrame fsk_frame_build(
 
     f.ptrs = ptrs;
     f.count = count;
+    f.valid = true;
+    return f;
+}
+
+static inline FskFrame fsk_parity_frame_build(
+    uint8_t frame_id,
+    const uint8_t *data,
+    uint32_t data_len,
+    const RSLayout &layout,
+    uint8_t *parity_flat_buf, // pre-allocated: layout.numBlocks * RS_PARITY_SHARDS * FSK_FRAG_DATA_SIZE
+    uint8_t (*parityPool)[PAYLOAD_SIZE_FSK],
+    uint8_t **ptrs)
+{
+    FskFrame f = {nullptr, 0, false};
+    uint16_t numParityFrags = layout.numBlocks * RS_PARITY_SHARDS;
+
+    rsEncode(data, data_len, parity_flat_buf, layout, FSK_FRAG_DATA_SIZE);
+
+    for (uint16_t p = 0; p < numParityFrags; p++)
+    {
+        uint16_t frag_index = layout.dataFrags + p;
+        uint8_t *pkt = parityPool[p];
+        // Same 7-byte header as data fragments
+        pkt[0] = frame_id;
+        pkt[1] = (uint8_t)(frag_index >> 8);
+        pkt[2] = (uint8_t)(frag_index & 0xFF);
+        pkt[3] = (uint8_t)(data_len >> 24);
+        pkt[4] = (uint8_t)(data_len >> 16);
+        pkt[5] = (uint8_t)(data_len >> 8);
+        pkt[6] = (uint8_t)(data_len & 0xFF);
+        memcpy(pkt + FSK_FRAG_HDR_SIZE,
+               parity_flat_buf + (uint32_t)p * FSK_FRAG_DATA_SIZE,
+               FSK_FRAG_DATA_SIZE);
+        ptrs[p] = pkt;
+    }
+
+    f.ptrs = ptrs;
+    f.count = numParityFrags;
     f.valid = true;
     return f;
 }
