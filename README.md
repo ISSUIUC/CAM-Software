@@ -94,8 +94,7 @@ CAM-Software/
 │   ├── LR2021/                   # LR2021 transceiver driver
 │   ├── tvp5151/                  # TVP5151 video ADC driver
 │   ├── RS/                       # Reed-Solomon error correction library
-│   ├── RadioHead/                # Radio communication library
-│   └── RadioLib/                 # Alternative radio library
+│   └── RadioLib/                 # Wrapper/driver for our lr2021 (LR2021 driver uses this to init chip)
 │
 ├── components/                   # ESP-IDF components (external dependencies)
 │   ├── arduino/                  # Arduino-ESP32 core (git submodule)
@@ -111,7 +110,7 @@ CAM-Software/
 │
 ├── CAMReader/                    # Ground station Python utilities
 │   ├── read_jpeg_stream.py       # Reads JPEG frames from USB serial & displays them
-│   ├── combine_images.py         # Combines tiled JPEG frames
+│   ├── combine_images.py         # Combines tiled JPEG frames (used by read_jpeg_stream.py)
 │   ├── pyproject.toml            # Python project configuration
 │   └── commands.txt              # Debugging commands
 │
@@ -188,7 +187,6 @@ CAM-Software/
    ```
    This populates `components/arduino/` (~2GB, takes several minutes).
 
-3. **ESP32-P4 toolchain** - PlatformIO downloads this automatically on first build.
 
 ### Building the Firmware
 
@@ -217,16 +215,33 @@ The firmware automatically detects which board to build based on the environment
 
 The corresponding `-DPROJECT_CAM` or `-DPROJECT_EAGLE` flags enable the correct code paths in `main/main.cpp`.
 
-## Running the Ground Station
+## Running the Ground Station / EAGLE
 
 ### Prerequisites (Python)
 
+Method 1:
+
 ```bash
 cd CAMReader
+python -m venv .venv
+# For windows:
+.venv\scripts\activate
+# For mac:
+. .venv/bin/activate
+
+#once you see a (camreader) thing in your terminal, run
+
 pip install -r requirements.txt  # or use: pip install pyserial pillow flask flask-cors
 ```
 
-### Starting the Ground Station
+Method 2 (if you have uv):
+
+```
+uv sync
+```
+
+
+### Starting the Ground Station / EAGLE
 
 ```bash
 python read_jpeg_stream.py
@@ -239,6 +254,8 @@ The script will:
 4. Stream continuous video to `output_stream.mjpg`
 5. Optionally display live preview (if OpenCV is installed)
 6. Optionally serve web interface at `http://localhost:5002/video_feed`
+
+Also, if you have `uv` installed, you can run `uv run read_jpeg_stream.py` instead!
 
 ## Workflow & Data Flow
 
