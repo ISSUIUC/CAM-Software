@@ -2,6 +2,14 @@
 
 A complete embedded system for capturing and transmitting live video from high-altitude rockets. This repository contains firmware for the **CAM-MK3** board (video capture and transmission) and the **EAGLE** receiver board.
 
+## Branch Conventions (follow these to the best of your abilities)
+
+`feature/my-feature`: for something new
+`bugfix/my-bugfix`: for fixing something old
+`launch/my-launch`: for a launch milestone
+`docs/some-docs`: for documentation
+`misc/something`: for anything else
+
 ## Project Overview
 
 The CAM-MK3 system converts analog video from rocket cameras into compressed digital video and transmits it wirelessly to a ground station. This is a hybrid esp-idf/Arduino framework project built with PlatformIO.
