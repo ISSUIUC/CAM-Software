@@ -23,7 +23,14 @@ A complete embedded system for capturing and transmitting live video from high-a
 
 ### Setting up the python backend
 
-Method 1:
+Method 1 (using `uv`):
+
+```bash
+cd CAMREADER
+uv sync
+```
+
+Method 2 (if you prefer using `python` or `python3` or `python3.1x`):
 
 ```bash
 cd CAMReader
@@ -36,12 +43,6 @@ python -m venv .venv
 #once you see a (camreader) thing in your terminal, run
 
 pip install -r requirements.txt  # or use: pip install pyserial pillow flask flask-cors
-```
-
-Method 2 (if you have uv):
-
-```
-uv sync
 ```
 
 
