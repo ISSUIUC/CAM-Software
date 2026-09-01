@@ -16,12 +16,12 @@ A complete embedded system for capturing and transmitting live video from high-a
 
 ## How to setup and run python script
 
-**Clone submodules** - Download the Arduino component (required):
-   ```bash
-   git submodule update --init --recursive
-   ```
-   This populates `components/arduino/` (~2GB, takes several minutes).
+### Setting up the codebase
 
+1. Clone the repo
+2. Clone the submodules with `git submodule update --init --recursive` (its around 2GB)
+
+### Setting up the python backend
 
 Method 1:
 
