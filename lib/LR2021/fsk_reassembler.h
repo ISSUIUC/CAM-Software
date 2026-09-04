@@ -195,7 +195,7 @@ static inline FskIngestResult fsk_reassembler_ingest(
     }
 
     if (!s->active)
-        return FSK_INGEST_BAD_HDR; // Only condition that would fail above is when it is a parity packet and it is NOT active. But we don't want that
+        return FSK_INGEST_BAD_HDR; // Only condition that would fail above is when it IS a parity packet. Sometimes, though, the assembler might not be active (for some odd reason, edge case), But we don't want that.
 
     if (is_parity)
     {
