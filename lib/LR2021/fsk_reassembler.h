@@ -59,7 +59,7 @@ struct FskReassemblyState
     uint32_t total_size;     // original payload length (from first fragment header)
     uint16_t total_frags;    // derived: fsk_frame_count(total_size)
     uint16_t frags_received; // unique fragments stored so far
-    uint32_t completed_size; // total_size saved before reset — read this at frame_ready
+    uint32_t completed_size; // total_size saved before reset, read this at frame_ready as completed size buffer
 
     // Timing
     uint32_t last_frag_ms; // millis() of last successfully stored fragment
