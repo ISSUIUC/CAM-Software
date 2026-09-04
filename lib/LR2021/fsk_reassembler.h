@@ -105,10 +105,20 @@ static inline bool fsk_reassembler_init(FskReassemblyState *s, uint32_t buf_size
         return false;
     s->data_buf_len = buf_size;
 
-    // Max parity fragments: ceil(buf_size / FSK_FRAG_DATA_SIZE / RS_DATA_SHARDS) * RS_PARITY_SHARDS
+    // max_data_frags = ceil(buf_size (length of maximum possible data) / frag_data size (what is the size of each fragment's data?))
     uint32_t max_data_frags = (buf_size + FSK_FRAG_DATA_SIZE - 1) / FSK_FRAG_DATA_SIZE;
+    // ceil(max_data_frags / rs_data_shards (how big a RS block is))
     uint32_t max_blocks = (max_data_frags + RS_DATA_SHARDS - 1) / RS_DATA_SHARDS;
+    /*
+    There are parity frags = N*RS_PARITY_SHARDS for every N blocks the Reed Solomon has to process (in our case we never go over one)
+    Each parity shard is 248 bytes long, with the 7 byte header it is 255 so a "shard" itself is a standalone packet
+    Since for every RS block (with "height" = 248 bytes, and "width" = ~81 (total JPEG image size / frag_data_size))
+    there are RS_PARITY_SHARDS amount of parity shards of length, we just multiply the total number of RS blocks
+    by how many parity shard blocks we have to get the total parity fragments we transmit (usually max blocks = 1,
+    so it is equal to the amount of parity shard blocks we have )
+    */
     uint32_t max_parity_frags = max_blocks * RS_PARITY_SHARDS;
+
     s->parity_buf_len = max_parity_frags * FSK_FRAG_DATA_SIZE;
     s->parity_buf = (uint8_t *)heap_caps_malloc(s->parity_buf_len, MALLOC_CAP_SPIRAM);
     if (!s->parity_buf)
