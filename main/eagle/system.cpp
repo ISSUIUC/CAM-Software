@@ -228,10 +228,10 @@ static void receive_thread(EAGLESystems *arg)
     sys.serial->println("[eagle] Radio init OK");
 #endif
 
-    // Receive thread on core 0 - high priority, never blocks on serial
+    // Receive thread on core 0 high priority
     xTaskCreatePinnedToCore((TaskFunction_t)receive_thread, "rxt", THREAD_STACK_SIZE_DEFAULT * 2, &sys, 7, nullptr, 0);
 
-    // Output thread on core 1 - handles slow serial output without blocking RX
+    // Output thread on core 1, handles slow serial output without blocking RX
     xTaskCreatePinnedToCore((TaskFunction_t)output_thread, "txout", THREAD_STACK_SIZE_DEFAULT * 2, &sys, 5, nullptr, 1);
 
     digitalWrite(LED_ORANGE, LOW);
