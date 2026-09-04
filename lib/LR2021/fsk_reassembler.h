@@ -169,7 +169,7 @@ static inline FskIngestResult fsk_reassembler_ingest(
     uint16_t dataFrags = fsk_frame_count(total_size);
     bool is_parity = (frag_index >= dataFrags);
 
-    // New frame ID — start fresh (data frags only trigger this)
+    // New frame ID (hermmm) start fresh (data frags only trigger this)
     if (!is_parity && (!s->active || incoming_id != s->frame_id))
     {
         if (s->active)
@@ -201,7 +201,7 @@ static inline FskIngestResult fsk_reassembler_ingest(
         return FSK_INGEST_OK;
     }
 
-    // --- data fragment path (unchanged logic below) ---
+    // this is what happens to a data fragment
     if (frag_index >= s->total_frags)
         return FSK_INGEST_BAD_HDR;
     if (fsk_fragment_seen(s, frag_index))
