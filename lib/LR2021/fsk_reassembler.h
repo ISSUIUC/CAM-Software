@@ -163,6 +163,7 @@ static inline void fsk_fragment_mark(FskReassemblyState *s, uint16_t idx)
         s->recv_bits[byte_idx] |= bit_mask;
 }
 
+// This is ran every iteration of the while loop of the receive thread
 static inline FskIngestResult fsk_reassembler_ingest(
     FskReassemblyState *s,
     const uint8_t *pkt,
