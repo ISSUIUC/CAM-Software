@@ -195,7 +195,7 @@ static inline FskIngestResult fsk_reassembler_ingest(
     }
 
     if (!s->active)
-        return FSK_INGEST_BAD_HDR; // parity arrived before any data frag
+        return FSK_INGEST_BAD_HDR; // Only condition that would fail above is when it is a parity packet and it is NOT active. But we don't want that
 
     if (is_parity)
     {
