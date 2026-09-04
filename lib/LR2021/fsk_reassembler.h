@@ -76,7 +76,7 @@ struct FskReassemblyState
     uint32_t stat_frame_resets; // times a new frame_id interrupted an in-progress frame
     uint32_t stat_frags_total;  // total fragments successfully written across all frames
 
-    // RS parity state — allocated once in init, persists across frames
+    // RS parity state: allocated once in init, persists across frames
     uint8_t *parity_buf; // SPIRAM: max_parity_frags * FSK_FRAG_DATA_SIZE
     uint32_t parity_buf_len;
     uint16_t parity_frags_received;
