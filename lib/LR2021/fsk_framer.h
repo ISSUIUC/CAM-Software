@@ -21,6 +21,7 @@ static inline uint16_t fsk_frame_count(uint32_t data_len)
 {
     if (data_len == 0)
         return 0;
+    // equiv to ceil (total size / fsk_frag_data_size)
     return (uint16_t)((data_len + FSK_FRAG_DATA_SIZE - 1) / FSK_FRAG_DATA_SIZE);
 }
 
