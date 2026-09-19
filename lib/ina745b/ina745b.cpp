@@ -1,9 +1,8 @@
 #include "ina745b.h"
 
-ina745b::ina745b(uint8_t addr, TwoWire *i2c)
+ina745b::ina745b(uint8_t addr)
 {
     _i2c_addr = addr;
-    _i2c = i2c;
 }
 
 void ina745b::init(){

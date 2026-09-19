@@ -9,13 +9,12 @@
 
 class ina745b {
 public:
-    ina745b(uint8_t addr, TwoWire *i2c);
+    ina745b(uint8_t addr);
     void init();
 
     int read_voltage();
 
 private:
-    TwoWire* _i2c;
     uint8_t _i2c_addr;
 
     int read_register(uint8_t register_addr);
