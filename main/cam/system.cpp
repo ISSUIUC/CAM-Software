@@ -1,4 +1,4 @@
-#ifdef IS_CAM
+// #ifdef IS_CAM
 
 #include <cam/system.h>
 #include <errors.h>
@@ -365,7 +365,7 @@ static void comm_thread(CAMSystems *arg)
                 // Attempt recovery.
                 arg->b2b.reinit();
                 arg->serial->println("Sleeping for recovery test...");
-                delay(500);
+                vTaskDelay(pdMS_TO_TICKS(500));
 
                 if (millis() - LAST_I2C_COMM <= I2C_RECOVERY_STATE_THRESHOLD)
                 {
@@ -389,11 +389,11 @@ static void comm_thread(CAMSystems *arg)
             {
                 is_in_fallback_state = true;
                 // arg->buzzer.play_tune(beep_beep, BEEP_LENGTH);
-                delay(50);
+                vTaskDelay(pdMS_TO_TICKS(50));
                 digitalWrite(CAM1_ON_OFF, HIGH);
-                delay(50);
+                vTaskDelay(pdMS_TO_TICKS(50));
                 digitalWrite(CAM2_ON_OFF, HIGH);
-                delay(50);
+                vTaskDelay(pdMS_TO_TICKS(50));
                 // digitalWrite(VTX_ON_OFF, HIGH);
                 // digitalWrite(VIDEO_SELECT, LOW);
 
@@ -419,8 +419,15 @@ static void comm_thread(CAMSystems *arg)
             arg->serial->println("Entered recovery mode");
         }
         // Serial.println("bruh5");
-        delay(10);
+        vTaskDelay(pdMS_TO_TICKS(10));
         // Serial.println("bruh6");
+    }
+}
+
+static void voltage_thread(CAMSystems *arg) {
+    while (true) {
+        ... 
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -495,4 +502,4 @@ static void comm_thread(CAMSystems *arg)
     }
 }
 
-#endif
+// #endif

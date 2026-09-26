@@ -12,6 +12,7 @@
 #include "jpeg.h"
 #include "cam_radio/cam_radio.h"
 #include "SPI.h"
+#include "ina745b.h"
 
 #include "esp_cache.h"
 #include "esp_video_init.h"
@@ -33,4 +34,5 @@ struct CAMSystems
     esp_video *video;
     jpeg_encoder JPEG;
     CAMRadio radio;
+    ina745b ina; // INA745B senses current and voltage for the camera power supply.
 };
