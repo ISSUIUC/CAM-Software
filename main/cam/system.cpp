@@ -155,6 +155,16 @@ static void poll_thread(CAMSystems *arg)
             }
         }
 
+        double voltage = arg->ina.read_voltage();
+        double current = arg->ina.read_current();
+        double power = arg->ina.read_power();
+        arg->serial->print("Voltage: ");
+        arg->serial->println(voltage);
+        arg->serial->print("Current: ");
+        arg->serial->println(current);
+        arg->serial->print("Power: ");
+        arg->serial->println(power);
+
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
@@ -486,6 +496,9 @@ static void voltage_thread(CAMSystems *arg) {
         {
         };
     }
+
+    sys.ina745b = ina745b(0x40);
+    sys.ina745b.init();
 
     xTaskCreatePinnedToCore((TaskFunction_t)cmd_thread, "cmdq", THREAD_STACK_SIZE_DEFAULT, &sys, 10, nullptr, CORE_1);
     xTaskCreatePinnedToCore((TaskFunction_t)poll_thread, "poll", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, CORE_1);

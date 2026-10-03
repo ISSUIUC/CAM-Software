@@ -8,15 +8,21 @@
 #define POWER_ADDR 0x8
 
 #define VBUS_CONVERSION_FACTOR 3.125 // 3.125 mV per LSB
+#define CURRENT_CONVERSION_FACTOR 1.2 // 1.2 mA per LSB
+#define POWER_CONVERSION_FACTOR 240 // 240 µW per LSB
 
 class ina745b {
 public:
     ina745b(uint8_t addr);
     void init();
 
-    int read_voltage();
-    int read_current();
-    int read_power();
+    int read_raw_voltage();
+    int read_raw_current();
+    int read_raw_power();
+
+    double read_voltage();
+    double read_current();
+    double read_power();
 
 private:
     uint8_t _i2c_addr;
