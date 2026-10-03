@@ -436,7 +436,7 @@ static void comm_thread(CAMSystems *arg)
 
 static void voltage_thread(CAMSystems *arg) {
     while (true) {
-        ... 
+        //...
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
@@ -497,8 +497,8 @@ static void voltage_thread(CAMSystems *arg) {
         };
     }
 
-    sys.ina745b = ina745b(0x40);
-    sys.ina745b.init();
+    //sys.ina = ina745b(0x40);
+    sys.ina.init(0x40);
 
     xTaskCreatePinnedToCore((TaskFunction_t)cmd_thread, "cmdq", THREAD_STACK_SIZE_DEFAULT, &sys, 10, nullptr, CORE_1);
     xTaskCreatePinnedToCore((TaskFunction_t)poll_thread, "poll", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, CORE_1);

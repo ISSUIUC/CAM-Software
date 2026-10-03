@@ -1,13 +1,15 @@
 #include "ina745b.h"
 
+ina745b::ina745b() {}
 ina745b::ina745b(uint8_t addr)
 {
     _i2c_addr = addr;
 }
 
-void ina745b::init() {
-    uint8_t reset_word = [0x80, 0x00];
-    write_register(CONFIG_ADDR, &reset_word, 2);
+void ina745b::init(uint8_t addr) {
+    _i2c_addr = addr;
+    uint8_t reset_word[] = {0x80, 0x00};
+    write_register(CONFIG_ADDR, reset_word, 2);
 }
 
 int ina745b::read_raw_voltage() {

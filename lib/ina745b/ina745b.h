@@ -13,8 +13,9 @@
 
 class ina745b {
 public:
+    ina745b();
     ina745b(uint8_t addr);
-    void init();
+    void init(uint8_t addr);
 
     int read_raw_voltage();
     int read_raw_current();
@@ -24,10 +25,11 @@ public:
     double read_current();
     double read_power();
 
+
 private:
     uint8_t _i2c_addr;
 
     int read_register(uint8_t reg_addr, uint8_t bytes);
-    int write_register(uint8_t reg_addr, uint8_t * data, uint8_t len);
+    void write_register(uint8_t reg_addr, uint8_t * data, uint8_t len);
 
 };
