@@ -2,6 +2,7 @@
 #include <Arduino.h>
 
 #define CONFIG_ADDR 0x0
+#define ADC_CONFIG_ADDR 0x1
 #define VBUS_ADDR 0x5
 #define TEMP_ADDR 0x6
 #define CURRENT_ADDR 0x7

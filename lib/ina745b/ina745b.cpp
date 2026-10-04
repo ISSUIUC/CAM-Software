@@ -6,8 +6,10 @@ ina745b::ina745b(uint8_t addr)
 }
 
 void ina745b::init() {
-    uint8_t reset_word = [0x80, 0x00];
-    write_register(CONFIG_ADDR, &reset_word, 2);
+    uint8_t reset_word[] = {0x80, 0x00};
+    uint8_t adc_configs[] = {0xF0, 0x00};
+    write_register(CONFIG_ADDR, reset_word, 2);
+    write_register(ADC_CONFIG_ADDR, adc_configs, 2);
 }
 
 int ina745b::read_raw_voltage() {
@@ -59,7 +61,7 @@ int ina745b::read_register(uint8_t reg_addr, uint8_t bytes) {
 void ina745b::write_register(uint8_t reg_addr, uint8_t * data, uint8_t len){
     Wire.beginTransmission(_i2c_addr);
     Wire.write(reg_addr);
-    for(int i = len-1; i >= 0; i++){
+    for(int i = len - 1; i >= 0; i--){
         Wire.write(data[i]);
     }
     
