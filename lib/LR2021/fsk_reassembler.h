@@ -26,7 +26,7 @@ static inline bool fsk_parse_header(
     return true;
 }
 
-static inline bool fsk_reassemble_fragment(
+static inline bool fsk_copy_fragment(
     const uint8_t *pkt,
     uint16_t frag_index,
     uint32_t total_size,
@@ -71,6 +71,9 @@ struct FskReassemblyState
     uint8_t *data_buf;
     uint32_t data_buf_len;
 
+    // Last fragment idx
+    uint16_t last_frag_idx;
+
     // Debug counters
     uint32_t stat_crc_drop;     // packets dropped due to LR2021_ERR_CRC_MISMATCH
     uint32_t stat_frame_resets; // times a new frame_id interrupted an in-progress frame
@@ -88,12 +91,14 @@ struct FskReassemblyState
 
 enum FskIngestResult : uint8_t
 {
-    FSK_INGEST_OK = 0,       // fragment stored, frame still in progress
-    FSK_INGEST_COMPLETE = 1, // all fragments received — frame ready in data_buf
-    FSK_INGEST_TIMEOUT = 2,  // partial frame flushed after stale timeout
-    FSK_INGEST_DUP = 3,      // duplicate fragment index, ignored
-    FSK_INGEST_OVERFLOW = 4, // fragment write would overflow data_buf
-    FSK_INGEST_BAD_HDR = 5,  // header parse failed or sanity check failed
+    FSK_INGEST_OK_IN_PROG = 0, // Fragment of current frame received, in progress
+    FSK_INGEST_OK_NEW = 1,     // Fragment of new frame received (previous unfinished) - old (partial) frame ready in data_buf
+    FSK_INGEST_OK_PARITY = 2,  // Parity fragment received (cannot trigger new frame)
+    FSK_INGEST_COMPLETE = 2,   // Last fragment of frame received - frame ready in data_buf
+    FSK_INGEST_TIMEOUT = 3,    // partial frame flushed after stale timeout
+    FSK_INGEST_DUP = 4,        // duplicate fragment index, ignored
+    FSK_INGEST_OVERFLOW = 5,   // fragment write would overflow data_buf
+    FSK_INGEST_BAD_HDR = 6     // header parse failed or sanity check failed
 };
 
 static inline bool fsk_reassembler_init(FskReassemblyState *s, uint32_t buf_size)
@@ -139,6 +144,7 @@ static inline void fsk_reassembler_reset(FskReassemblyState *s)
     s->total_frags = 0;
     s->frags_received = 0;
     s->last_frag_ms = 0;
+    s->last_frag_idx=-1;
     s->parity_frags_received = 0;
     s->rs_layout_valid = false;
     memset(s->recv_bits, 0, FSK_RX_BYTE_FIELD_LENGTH);
@@ -183,8 +189,12 @@ static inline FskIngestResult fsk_reassembler_ingest(
     // New frame ID (hermmm) start fresh (data frags only trigger this)
     if (!is_parity && (!s->active || incoming_id != s->frame_id))
     {
-        if (s->active)
+        bool was_active = s->active;
+        if(s->active){
             s->stat_frame_resets++;
+            s->last_complete_id = s->frame_id;
+            s->completed_size = s->total_size;
+        }
         fsk_reassembler_reset(s);
         s->active = true;
         s->frame_id = incoming_id;
@@ -192,6 +202,9 @@ static inline FskIngestResult fsk_reassembler_ingest(
         s->total_frags = dataFrags;
         s->rs_layout.compute(total_size, FSK_FRAG_DATA_SIZE);
         s->rs_layout_valid = true;
+        s->last_frag_idx = frag_index;
+
+        return was_active ? FSK_INGEST_OK_NEW : FSK_INGEST_OK_IN_PROG;
     }
 
     if (!s->active)
@@ -209,37 +222,30 @@ static inline FskIngestResult fsk_reassembler_ingest(
         fsk_fragment_mark(s, frag_index); // unified recv_bits covers data+parity indices
         s->parity_frags_received++;
         s->last_frag_ms = now_ms;
-        return FSK_INGEST_OK;
+        return FSK_INGEST_OK_PARITY;
     }
 
-    // this is what happens to a data fragment
-    // if (frag_index >= s->total_frags)
-    //     return FSK_INGEST_BAD_HDR; this is never called
     if (fsk_fragment_seen(s, frag_index))
         return FSK_INGEST_DUP;
-    if (!fsk_reassemble_fragment(pkt, frag_index, total_size, s->data_buf, s->data_buf_len))
-        return FSK_INGEST_OVERFLOW;
 
     fsk_fragment_mark(s, frag_index);
+    s->last_frag_idx = frag_index;
     s->frags_received++;
     s->last_frag_ms = now_ms;
     s->stat_frags_total++;
 
-    if (s->frags_received >= s->total_frags)
-    {
-        s->last_complete_id = s->frame_id;
-        s->completed_size = s->total_size;
-        fsk_reassembler_reset(s);
-        return FSK_INGEST_COMPLETE;
-    }
-    return FSK_INGEST_OK;
+
+    return FSK_INGEST_OK_IN_PROG;
 }
+
+
+
 static inline FskIngestResult fsk_reassembler_check_timeout(
     FskReassemblyState *s,
     uint32_t now_ms)
 {
     if (!s->active || s->frags_received == 0)
-        return FSK_INGEST_OK;
+        return FSK_INGEST_OK_IN_PROG;
 
     if (now_ms - s->last_frag_ms >= FSK_RX_FRAME_TIMEOUT_MS)
     {
@@ -259,5 +265,23 @@ static inline FskIngestResult fsk_reassembler_check_timeout(
         fsk_reassembler_reset(s);
         return FSK_INGEST_TIMEOUT;
     }
-    return FSK_INGEST_OK;
+    return FSK_INGEST_OK_IN_PROG;
+}
+
+static inline bool fsk_try_decode(FskReassemblyState *s){
+    if (s->frags_received < s->total_frags &&
+    s->rs_layout_valid &&
+    s->parity_frags_received > 0)
+    {
+        s->last_complete_id = s->frame_id;
+        s->completed_size = s->total_size;
+
+        rsDecode(s->data_buf, s->total_size,
+                    s->parity_buf,
+                    s->recv_bits, FSK_RX_BYTE_FIELD_LENGTH,
+                    s->rs_layout, FSK_FRAG_DATA_SIZE);
+
+        return true;
+    } 
+    return false;
 }

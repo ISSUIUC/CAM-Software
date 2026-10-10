@@ -74,6 +74,9 @@ static void output_thread(EAGLESystems *arg)
     }
 }
 
+static void commit_frame();
+static void usb_debug_packet_info(EAGLESystems *arg, LR2021FskPktStatus pkt_status);
+
 static void receive_thread(EAGLESystems *arg)
 {
     LR2021FSKDriver *radio = arg->radio.getDriver();
@@ -81,9 +84,9 @@ static void receive_thread(EAGLESystems *arg)
     static uint8_t pkt_buf[PAYLOAD_SIZE_FSK];
     static LR2021FskPktStatus pkt_status;
 
-#ifdef USE_USB_DEBUG
-    uint32_t last_status_ms = 0;
-#endif
+    #ifdef USE_USB_DEBUG
+        uint32_t last_status_ms = 0;
+    #endif
 
     while (true)
     {
@@ -94,7 +97,7 @@ static void receive_thread(EAGLESystems *arg)
         {
             s_reassembler.stat_crc_drop++;
             if (fsk_reassembler_check_timeout(&s_reassembler, now) == FSK_INGEST_TIMEOUT)
-                goto frame_ready;
+                commit_frame();
             taskYIELD();
             continue;
         }
@@ -102,63 +105,76 @@ static void receive_thread(EAGLESystems *arg)
         if (result.driverCode == LR2021_ERR_RX_TIMEOUT)
         {
             if (fsk_reassembler_check_timeout(&s_reassembler, now) == FSK_INGEST_TIMEOUT)
-                goto frame_ready;
+                commit_frame();
             taskYIELD();
             continue;
         }
 
         if (!result.ok())
         {
-#ifdef USE_USB_DEBUG
-            if (!output_busy)
-                arg->serial->printf("[rx] error: %s\n", result.stageStr());
-#endif
+            #ifdef USE_USB_DEBUG
+                if (!output_busy)
+                    arg->serial->printf("[rx] error: %s\n", result.stageStr());
+            #endif
             taskYIELD();
             continue;
         }
 
-        {
-            FskIngestResult ir = fsk_reassembler_ingest(&s_reassembler, pkt_buf, now);
+        FskIngestResult ir = fsk_reassembler_ingest(&s_reassembler, pkt_buf, now);
 
-            if (ir == FSK_INGEST_COMPLETE || ir == FSK_INGEST_TIMEOUT)
-                goto frame_ready;
-
-#ifdef USE_USB_DEBUG
-            if (!output_busy && (millis() - last_status_ms >= 2000))
-            {
-                last_status_ms = millis();
-                arg->serial->printf(
-                    "[rx] id=0x%02X frags=%u/%u rssi=%.1f lqi=%.2f | drops=%lu resets=%lu\n",
-                    s_reassembler.frame_id,
-                    s_reassembler.frags_received,
-                    s_reassembler.total_frags,
-                    pkt_status.rssiAvg,
-                    pkt_status.lqi,
-                    (unsigned long)s_reassembler.stat_crc_drop,
-                    (unsigned long)s_reassembler.stat_frame_resets);
-            }
-#endif
-            taskYIELD();
-            continue;
+        if(ir == FSK_INGEST_OK_NEW){
+            if(fsk_try_decode(&s_reassembler))
+                commit_frame();
         }
 
-    frame_ready:
-    {
-        // completed_size is saved by ingest/check_timeout BEFORE reset clears total_size
-        uint32_t len = s_reassembler.completed_size;
-        if (len > 0 && !output_busy)
-        {
-            bl_stat = !bl_stat;
-            digitalWrite(LED_BLUE, bl_stat);
-            memcpy(output_buffer, s_reassembler.data_buf, len);
-            output_len = len;
-            xSemaphoreGive(output_sem);
+        if(ir == FSK_INGEST_OK_IN_PROG || ir == FSK_INGEST_OK_NEW || ir == FSK_INGEST_COMPLETE)
+            fsk_copy_fragment(pkt_buf, s_reassembler.last_frag_idx, 
+                s_reassembler.total_size, s_reassembler.data_buf, 
+                s_reassembler.data_buf_len); 
+        
+        usb_debug_packet_info(arg, pkt_status);
+
+        if(ir == FSK_INGEST_COMPLETE){
+            commit_frame();
         }
-    }
+
         taskYIELD();
-        continue;
     }
 }
+
+static void commit_frame(){
+    // completed_size is saved by ingest/check_timeout BEFORE reset clears total_size
+    uint32_t len = s_reassembler.completed_size;
+    if (len > 0 && !output_busy)
+    {
+        bl_stat = !bl_stat;
+        digitalWrite(LED_BLUE, bl_stat);
+        memcpy(output_buffer, s_reassembler.data_buf, len);
+        output_len = len;
+        xSemaphoreGive(output_sem);
+    }
+}
+
+static void usb_debug_packet_info(EAGLESystems *arg, LR2021FskPktStatus pkt_status){
+#ifdef USE_USB_DEBUG
+    static uint32_t last_status_ms = 0;
+
+    if (!output_busy && (millis() - last_status_ms >= 2000))
+    {
+        last_status_ms = millis();
+        arg->serial->printf(
+            "[rx] id=0x%02X frags=%u/%u rssi=%.1f lqi=%.2f | drops=%lu resets=%lu\n",
+            s_reassembler.frame_id,
+            s_reassembler.frags_received,
+            s_reassembler.total_frags,
+            pkt_status.rssiAvg,
+            pkt_status.lqi,
+            (unsigned long)s_reassembler.stat_crc_drop,
+            (unsigned long)s_reassembler.stat_frame_resets);
+    }
+#endif 
+}
+
 
 /* Begin all system data */
 [[noreturn]] void sys_begin()
