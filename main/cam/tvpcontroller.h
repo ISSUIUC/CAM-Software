@@ -51,9 +51,9 @@ class TVPController {
     };
 
     uint8_t tvp_locked() {
-        bool vsync_locked;
-        bool hsync_locked;
-        bool color_locked;
+        bool vsync_locked = false;
+        bool hsync_locked = false;
+        bool color_locked = false;
 
         constexpr int MAX_TVP_LOCK_ATTEMPTS = 10;
         int num_attempts = 0;
