@@ -5,11 +5,72 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
+#include "driver/gpio.h"
 
 #define THREAD_STACK_SIZE_DEFAULT 4096
 
 USBCDC USBSerial;
 CAMSystems sys;
+
+// DVP frame-flow counters, defined in components/esp_video/src/device/esp_video_dvp_device.c
+extern "C" volatile uint32_t g_dvp_eof_count;
+extern "C" volatile uint32_t g_dvp_starved_count;
+
+// VSYNC probe: watches the TVP's VSYNC pin independently of the DVP, so a dead capture can be told
+// apart from a dead TVP. A field longer than ~30 ms (480 lines of AVID data) does not fit in one
+// 720x480x2 DVP buffer, so long gaps are logged along with the DMA EOF count when they ended.
+#define VSYNC_LONG_GAP_US 22000
+#define VSYNC_GAP_LOG_LEN 16
+
+struct vsync_gap_t
+{
+    int64_t end_us;
+    int32_t gap_us;
+    uint32_t eof_count;
+};
+
+static volatile uint32_t vsync_edges = 0;
+static volatile int64_t vsync_last_us = 0;
+static vsync_gap_t vsync_gap_log[VSYNC_GAP_LOG_LEN];
+static volatile uint32_t vsync_gap_count = 0;
+
+static void IRAM_ATTR vsync_isr(void *)
+{
+    int64_t now = esp_timer_get_time();
+    if (vsync_last_us != 0 && now - vsync_last_us > VSYNC_LONG_GAP_US)
+    {
+        vsync_gap_t &gap = vsync_gap_log[vsync_gap_count % VSYNC_GAP_LOG_LEN];
+        gap.end_us = now;
+        gap.gap_us = (int32_t)(now - vsync_last_us);
+        gap.eof_count = g_dvp_eof_count;
+        vsync_gap_count = vsync_gap_count + 1;
+    }
+    vsync_last_us = now;
+    vsync_edges = vsync_edges + 1;
+}
+
+static void start_vsync_probe()
+{
+    gpio_install_isr_service(0); // ESP_ERR_INVALID_STATE if already installed, which is fine
+    gpio_set_intr_type((gpio_num_t)TVP5151_VSYNC, GPIO_INTR_POSEDGE);
+    gpio_isr_handler_add((gpio_num_t)TVP5151_VSYNC, vsync_isr, nullptr);
+}
+
+static void print_new_vsync_gaps(CAMSystems *arg, uint32_t &printed)
+{
+    uint32_t count = vsync_gap_count;
+    if (count - printed > VSYNC_GAP_LOG_LEN)
+    {
+        printed = count - VSYNC_GAP_LOG_LEN;
+    }
+    for (; printed < count; printed++)
+    {
+        const vsync_gap_t &gap = vsync_gap_log[printed % VSYNC_GAP_LOG_LEN];
+        arg->serial->printf("[dvp] long VSYNC gap %.1f ms at t=%.3f s (dma eof %lu)\n",
+                            gap.gap_us / 1000.0, gap.end_us / 1e6, (unsigned long)gap.eof_count);
+    }
+}
 
 static void cmd_thread(CAMSystems *arg)
 {
@@ -248,11 +309,49 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
     heap_caps_free(pPtrs);
 }
 
+// The TVP free-runs at ~60 fields/s even with no camera input, so this many empty 100 ms waits
+// in a row means the DVP capture itself has stopped
+#define DVP_STALL_WAITS 3
+
+static void recover_stalled_dvp(CAMSystems *arg, uint32_t vsync_at_last_field, uint32_t eof_at_last_field)
+{
+    static uint32_t stalls = 0;
+    uint32_t eof_now = g_dvp_eof_count;
+
+    // vsync still counting + dma eof frozen = TVP is fine, the P4 capture DMA is dead.
+    // A long VSYNC gap logged with this same dma eof count is the field that overflowed it.
+    arg->serial->printf("[dvp] STALL #%lu: no field for %d ms | vsync +%lu, dma eof +%lu (frozen at %lu), starved %lu | TVP V%d H%d, %u lines\n",
+                        (unsigned long)++stalls, DVP_STALL_WAITS * 100,
+                        (unsigned long)(vsync_edges - vsync_at_last_field),
+                        (unsigned long)(eof_now - eof_at_last_field), (unsigned long)eof_now,
+                        (unsigned long)g_dvp_starved_count,
+                        arg->tvp.tvp.read_vertical_sync_lock_status(),
+                        arg->tvp.tvp.read_horizontal_sync_lock_status(),
+                        arg->tvp.tvp.read_vertical_line_count());
+
+    esp_err_t err = restart_dvp_capture(arg->video);
+    if (err != ESP_OK)
+    {
+        arg->serial->printf("[dvp] capture restart failed: %s\n", esp_err_to_name(err));
+    }
+    else
+    {
+        arg->serial->println("[dvp] capture restarted");
+    }
+}
+
 static void video_thread(CAMSystems *arg)
 {
+    uint32_t empty_waits = 0;
+    uint32_t vsync_at_last_field = vsync_edges;
+    uint32_t eof_at_last_field = g_dvp_eof_count;
+    uint32_t vsync_gaps_printed = 0;
+
     while (true)
     {
         vTaskDelay(pdMS_TO_TICKS(10));
+
+        print_new_vsync_gaps(arg, vsync_gaps_printed);
 
         bool v_lock = arg->tvp.tvp.read_vertical_sync_lock_status();
         bool h_lock = arg->tvp.tvp.read_horizontal_sync_lock_status();
@@ -270,8 +369,18 @@ static void video_thread(CAMSystems *arg)
         esp_video_buffer_element *elem_a = esp_video_recv_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, pdMS_TO_TICKS(100));
         if (!elem_a)
         {
+            if (++empty_waits >= DVP_STALL_WAITS)
+            {
+                recover_stalled_dvp(arg, vsync_at_last_field, eof_at_last_field);
+                empty_waits = 0;
+                vsync_at_last_field = vsync_edges;
+                eof_at_last_field = g_dvp_eof_count;
+            }
             continue;
         }
+        empty_waits = 0;
+        vsync_at_last_field = vsync_edges;
+        eof_at_last_field = g_dvp_eof_count;
 
         arg->serial->println("elem a recieved");
 
@@ -464,6 +573,7 @@ static void comm_thread(CAMSystems *arg)
 
     sys.video = DVP_init();
     start_dvp_capture(sys.video);
+    start_vsync_probe();
 
     sys.JPEG.init();
 
