@@ -10,11 +10,8 @@
 
 #include <Arduino.h>
 
-#define DVP_BUFFER_COUNT 2
-
 esp_video* DVP_init();
 void start_dvp_capture(esp_video *video);
-esp_err_t restart_dvp_capture(esp_video *video);
 
 
 #endif
