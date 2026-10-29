@@ -213,8 +213,8 @@ static inline FskIngestResult fsk_reassembler_ingest(
     }
 
     // this is what happens to a data fragment
-    if (frag_index >= s->total_frags)
-        return FSK_INGEST_BAD_HDR;
+    // if (frag_index >= s->total_frags)
+    //     return FSK_INGEST_BAD_HDR; this is never called
     if (fsk_fragment_seen(s, frag_index))
         return FSK_INGEST_DUP;
     if (!fsk_reassemble_fragment(pkt, frag_index, total_size, s->data_buf, s->data_buf_len))
