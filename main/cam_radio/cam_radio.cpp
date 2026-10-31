@@ -8,6 +8,6 @@ CAMRadioStatus CAMRadio::init(SPIClass &spi)
         Serial.printf("[CAMRadio] init failed, err=%d\n", err.driverCode);
         return CAMRADIO_INIT_ERR;
     }
-    Serial.println("[CAMRadio] init OK (LR2021 FSK driver)");
+    Serial.println("[CAMRadio] init OK (LR2021 " RADIO_MODULATION_NAME " driver)");
     return CAMRADIO_OK;
 }
