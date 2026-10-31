@@ -226,7 +226,7 @@ static void receive_thread(EAGLESystems *arg)
     output_sem = xSemaphoreCreateBinary();
 
     // Init radio
-    CAMRadioStatus radio_status = sys.radio.init(SPI);
+    CAMRadioStatus radio_status = sys.radio.init(SPI, sys.serial);
     if (radio_status != CAMRadioStatus::CAMRADIO_OK)
     {
 #ifdef USE_USB_DEBUG

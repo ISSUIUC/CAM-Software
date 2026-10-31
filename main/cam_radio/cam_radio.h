@@ -20,7 +20,7 @@ private:
 
 public:
     // Initialize radio hardware. Call after SPI.begin().
-    CAMRadioStatus init(SPIClass &spi);
+    CAMRadioStatus init(SPIClass &spi, USBCDC *serial);
 
     // // Access underlying driver for debug/advanced use.
     LR2021Driver *getDriver() { return &_radio; }
