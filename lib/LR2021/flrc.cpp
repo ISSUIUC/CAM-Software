@@ -306,18 +306,6 @@ uint8_t LR2021FLRCDriver::readAndClearRxFifoFlags()
     return rx[2]; // rx[3] is the Tx FIFO
 }
 
-// GetErrors 0x01 0x10: latched until ClearErrors or reset. Answer comes in a second frame, like the reads above
-uint16_t LR2021FLRCDriver::readErrors()
-{
-    const uint8_t cmd[2] = {0x01, 0x10};
-    spiWrite(cmd, sizeof(cmd));
-
-    uint8_t tx[4] = {0};
-    uint8_t rx[4] = {0};
-    spiTransfer(tx, rx, sizeof(rx));
-    return (uint16_t)(rx[2] << 8) | rx[3];
-}
-
 void LR2021FLRCDriver::spiWrite(const uint8_t cmd[], size_t len)
 {
     while (digitalRead(LR2021_BUSY))
