@@ -63,10 +63,6 @@ public:
     LR2021Error receiveBurstPacket(uint8_t data[], uint8_t len, LR2021FlrcPktStatus *outStatus, uint32_t timeoutMs);
     void stopBurstReceive();
 
-    // Chip error flags (calibration, XOSC, PLL). Bits are RadioLib's RADIOLIB_LR2021_*_ERR. Waits on BUSY, so not
-    // safe to call when init failed with RADIOLIB_ERR_SPI_CMD_TIMEOUT
-    uint16_t readErrors();
-
     void transmitCallSign();
 };
 
