@@ -7,50 +7,66 @@
 
 #define TVP_DEVICE_ID 0x5151
 
-class TVPController {
-    public:
+class TVPController
+{
+public:
     tvp5151 tvp{TVP5151_PDN, TVP5151_RESET, TVP5151_ADDR, &Wire};
 
-    int init() {
+    int init()
+    {
 
-        for(uint8_t i = 0; i < YOUT_PIN_COUNT; i++) {
+        for (uint8_t i = 0; i < YOUT_PIN_COUNT; i++)
+        {
             pinMode(YOUT[i], INPUT);
         }
 
-        if(!tvp.init()) {
+        if (!tvp.init())
+        {
             return CAM_TVP_FAILED_TO_INIT;
-        }  
+        }
 
         uint16_t device_id = tvp.read_device_id();
-        if(device_id != TVP_DEVICE_ID) {
+        if (device_id != TVP_DEVICE_ID)
+        {
             return CAM_TVP_FAILED_TO_COMMUNICATE;
         }
 
-        if(!tvp.source_select(CAM1)) {  
+        if (!tvp.source_select(CAM1))
+        {
             return CAM_TVP_FAILED_TO_SS;
         }
 
-        if(!tvp.set_ycbcr_output_enable(true)) {
+        if (!tvp.set_ycbcr_output_enable(true))
+        {
             return CAM_TVP_FAILED_TO_SET_OUTPUT;
         }
 
-        
-        if(!tvp.set_clock_output_enable(true)) {
+        if (!tvp.set_clock_output_enable(true))
+        {
             return CAM_TVP_FAILED_TO_SET_CLOCK;
         }
 
-        if (!tvp.set_avid_output_enable(true)) {
+        if (!tvp.set_avid_output_enable(true))
+        {
             return CAM_TVP_FAILED_TO_SET_AVID;
         }
 
-        if (!tvp.set_yCbCr_output_format(true)) {
+        if (!tvp.set_yCbCr_output_format(true))
+        {
             return CAM_TVP_FAILED_TO_SET_FORMAT;
+        }
+
+        // only start when we have actual live video
+        if (!tvp.set_avid_out_active_during_vblk(false))
+        {
+            return CAM_TVP_FAILED_TO_SET_AVID;
         }
 
         return CAM_OK;
     };
 
-    uint8_t tvp_locked() {
+    uint8_t tvp_locked()
+    {
         bool vsync_locked = false;
         bool hsync_locked = false;
         bool color_locked = false;
@@ -68,7 +84,8 @@ class TVPController {
         return vsync_locked && hsync_locked && color_locked;
     }
 
-    bool source_select(int camera) {
+    bool source_select(int camera)
+    {
         return tvp.source_select(camera);
     };
 };

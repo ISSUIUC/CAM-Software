@@ -44,9 +44,18 @@ private:
 
     uint8_t *merged_buf;
 
+    int stride_candidate = 0;
+    int stride_candidate_fields = 0;
+
+    void update_line_stride(const uint8_t *field, int field_len);
+
 public:
     uint32_t jpg_encoded_size = 0;
     uint8_t *jpg_encoder_output_buf;
+
+    int line_stride = 720 * 2; // bytes per video line in the dvp buffer
+    int uyvy_offset = 0;       // bytes skipped before the first pixel
+    bool sav_present = false;  // lines start with a bt656 sav code which the tvp outputs
 
     void init();
 
