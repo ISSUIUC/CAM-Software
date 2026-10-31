@@ -589,7 +589,7 @@ static void voltage_thread(CAMSystems *arg) {
     sys.JPEG.init();
 
     // Radio begin
-    CAMRadioStatus radio_status = sys.radio.init(SPI);
+    CAMRadioStatus radio_status = sys.radio.init(SPI, sys.serial);
     if (radio_status != CAMRadioStatus::CAMRADIO_OK)
     {
         sys.serial->print("[sys_begin] Radio init fail: ");

@@ -26,7 +26,7 @@ static const int IRQ_PIN = 9;
 #define FREQ_447 446.85 // mhz
 
 #define FREQ_FSK FREQ_447  // MHz
-#define FREQ_FLRC FREQ_447 // MHz
+#define FREQ_FLRC FREQ_434 // MHz
 
 #define BITRATE_FLRC 1300                   // kbps (kilo-BITS per second) raw. DS Rev 2.2 Table 3-8
 #define CR_FLRC RADIOLIB_LR2021_FLRC_CR_3_4 // 1300 * 3/4 = 975 kbps effective (DS Table 18-2)
@@ -92,6 +92,7 @@ static const uint8_t RSSI_CAL_NF_LF[27] = {                                     
 #define LR2021_ERR_DATASHAPING -2011
 #define LR2021_ERR_FSK_FIXED_PACKET_MD -2012
 #define LR2021_ERR_RX_FIFO_OVERFLOW -2013
+#define LR2021_ERR_FLRC_INIT_RX_BOOST_FAILED -2014
 
 struct LR2021Error
 {
@@ -132,6 +133,8 @@ struct LR2021Error
             return "radio.fixedPacketLengthMode(PAYLOAD_SIZE_FSK); failed";
         case LR2021_ERR_RX_FIFO_OVERFLOW:
             return "lr2021.receiveBurstPacket() rx fifo overflow, packet dropped";
+        case LR2021_ERR_FLRC_INIT_RX_BOOST_FAILED:
+            return "radio.setRxBoostedGainMode() failed";
         case LR2021_ERR_GENERIC:
             return "GL bro idk where this error is";
         default:
