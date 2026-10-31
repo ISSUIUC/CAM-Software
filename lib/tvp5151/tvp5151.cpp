@@ -532,7 +532,10 @@ bool tvp5151::set_crop_avid_horizontal(int16_t start_offset, int16_t stop_offset
     // bit shift to go from 10 bit to 8 bit (cut off first 2 bits)
     if (!write_register(TVP_REG_AVID_CROP_START_MSB, (u_start >> 2) & 0xFF)) // Bits 9-2
         return false;
-    if (!write_register(TVP_REG_AVID_CROP_START_LSB, u_start & 0x03)) // Bits 1-0 (Triggers update)
+
+    // need to maintain the avid configuration for vblk
+    tvp_i2c_result_t start_lsb = read_register(TVP_REG_AVID_CROP_START_LSB);
+    if (!write_register(TVP_REG_AVID_CROP_START_LSB, (start_lsb.data & 0x04) | (u_start & 0x03)))
         return false;
 
     uint16_t u_stop = (uint16_t)stop_offset & 0x03FF;
