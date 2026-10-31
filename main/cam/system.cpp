@@ -229,8 +229,8 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
     if (len == 0)
         return;
 
-    uint16_t n = fsk_frame_count(len);
-    // arg->serial->print("[tx] fsk frame count output: ");
+    uint16_t n = frame_count(len);
+    // arg->serial->print("[tx] frame count output: ");
     // arg->serial->println(n);
     if (n == 0)
         return;
@@ -241,28 +241,25 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
     digitalWrite(LED_GREEN, light_on_frame);
     arg->b2b.state.vmux_state = !arg->b2b.state.vmux_state;
 
-    LR2021FSKDriver *driver = arg->radio.getDriver();
+    LR2021Driver *driver = arg->radio.getDriver();
 
-    uint8_t (*pool)[PAYLOAD_SIZE_FSK] = (uint8_t (*)[PAYLOAD_SIZE_FSK])
-        heap_caps_malloc((size_t)n * PAYLOAD_SIZE_FSK, MALLOC_CAP_SPIRAM);
-    uint8_t **ptrs = (uint8_t **)heap_caps_malloc(n * sizeof(uint8_t *), MALLOC_CAP_SPIRAM);
+    uint8_t (*pool)[RADIO_PACKET_SIZE] = (uint8_t (*)[RADIO_PACKET_SIZE])
+        heap_caps_malloc((size_t)n * RADIO_PACKET_SIZE, MALLOC_CAP_SPIRAM);
 
-    if (!pool || !ptrs)
+    if (!pool)
     {
-        heap_caps_free(pool);
-        heap_caps_free(ptrs);
         arg->serial->println("[tx] OOM building frame");
         return;
     }
 
     frame_id++;
 
-    FskFrame frame = fsk_frame_build(frame_id, buf, len, pool, ptrs, n);
+    Frame frame = frame_build(frame_id, buf, len, pool, n);
 
     if (frame.valid)
     {
         arg->serial->println("[tx] Frame build successfully.");
-        LR2021Error err = fsk_frame_transmit(*driver, frame);
+        LR2021Error err = frame_transmit(*driver, frame);
 
         if (!err.ok())
         {
@@ -281,32 +278,29 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
     // arg->serial->println("TX Done");
 
     heap_caps_free(pool);
-    heap_caps_free(ptrs);
 
     RSLayout layout;
-    layout.compute(len, FSK_FRAG_DATA_SIZE);
+    layout.compute(len, FRAG_DATA_SIZE);
     uint16_t numParity = layout.numBlocks * RS_PARITY_SHARDS;
 
     uint8_t *parity_flat = (uint8_t *)heap_caps_malloc(
-        (uint32_t)numParity * FSK_FRAG_DATA_SIZE, MALLOC_CAP_SPIRAM);
-    uint8_t (*pPool)[PAYLOAD_SIZE_FSK] = (uint8_t (*)[PAYLOAD_SIZE_FSK])
-        heap_caps_malloc((size_t)numParity * PAYLOAD_SIZE_FSK, MALLOC_CAP_SPIRAM);
-    uint8_t **pPtrs = (uint8_t **)heap_caps_malloc(numParity * sizeof(uint8_t *), MALLOC_CAP_SPIRAM);
+        (uint32_t)numParity * FRAG_DATA_SIZE, MALLOC_CAP_SPIRAM);
+    uint8_t (*pPool)[RADIO_PACKET_SIZE] = (uint8_t (*)[RADIO_PACKET_SIZE])
+        heap_caps_malloc((size_t)numParity * RADIO_PACKET_SIZE, MALLOC_CAP_SPIRAM);
 
-    if (parity_flat && pPool && pPtrs)
+    if (parity_flat && pPool)
     {
-        FskFrame pFrame = fsk_parity_frame_build(
-            frame_id, buf, len, layout, parity_flat, pPool, pPtrs);
+        Frame pFrame = parity_frame_build(
+            frame_id, buf, len, layout, parity_flat, pPool);
         if (pFrame.valid)
         {
-            LR2021Error err = fsk_frame_transmit(*driver, pFrame);
+            LR2021Error err = frame_transmit(*driver, pFrame);
             if (!err.ok())
                 arg->serial->printf("[tx] parity burst failed: %s\n", err.stageStr());
         }
     }
     heap_caps_free(parity_flat);
     heap_caps_free(pPool);
-    heap_caps_free(pPtrs);
 }
 
 // The TVP free-runs at ~60 fields/s even with no camera input, so this many empty 100 ms waits

@@ -98,7 +98,7 @@ LR2021Error LR2021FSKDriver::transmit(uint8_t *data, uint8_t len)
     }
 }
 
-LR2021Error LR2021FSKDriver::transmitBurst(uint8_t **packets, int count, uint8_t len)
+LR2021Error LR2021FSKDriver::transmitBurst(uint8_t packets[][PAYLOAD_SIZE_FSK], int count, uint8_t len)
 {
 
     static uint8_t cmd[PAYLOAD_SIZE_FSK + 2] = {0x00, 0x02};

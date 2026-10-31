@@ -1,8 +1,8 @@
 #pragma once
 
-#include "fsk.h"
-#include "fsk_framer.h"
-#include "fsk_reassembler.h"
+#include "modulation.h"
+#include "framer.h"
+#include "reassembler.h"
 
 #include <pins.h>
 #include <SPI.h>
@@ -16,12 +16,12 @@ enum CAMRadioStatus
 class CAMRadio
 {
 private:
-    LR2021FSKDriver _radio;
+    LR2021Driver _radio;
 
 public:
     // Initialize radio hardware. Call after SPI.begin().
     CAMRadioStatus init(SPIClass &spi);
 
     // // Access underlying driver for debug/advanced use.
-    LR2021FSKDriver *getDriver() { return &_radio; }
+    LR2021Driver *getDriver() { return &_radio; }
 };

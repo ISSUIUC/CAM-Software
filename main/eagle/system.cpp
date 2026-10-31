@@ -10,7 +10,7 @@ EAGLESystems sys;
 USBCDC USBSerial;
 #endif // ajdsfasf
 
-static FskReassemblyState s_reassembler;
+static ReassemblyState s_reassembler;
 static uint8_t *output_buffer = nullptr;
 static uint32_t output_len = 0;
 static SemaphoreHandle_t output_sem = nullptr;
@@ -74,26 +74,42 @@ static void output_thread(EAGLESystems *arg)
     }
 }
 
+#if RADIO_MODULATION == MODULATION_FSK
+#define RX_QUALITY_FMT "lqi=%.2f"
+#define RX_QUALITY(status) (status).lqi
+#else
+#define RX_QUALITY_FMT "rssi_sync=%.1f"
+#define RX_QUALITY(status) (status).rssiSync
+#endif
+
 static void receive_thread(EAGLESystems *arg)
 {
-    LR2021FSKDriver *radio = arg->radio.getDriver();
+    LR2021Driver *radio = arg->radio.getDriver();
 
-    static uint8_t pkt_buf[PAYLOAD_SIZE_FSK];
-    static LR2021FskPktStatus pkt_status;
+    static uint8_t pkt_buf[RADIO_PACKET_SIZE];
+    static LR2021PktStatus pkt_status;
 
 #ifdef USE_USB_DEBUG
     uint32_t last_status_ms = 0;
 #endif
 
+#if RADIO_MODULATION == MODULATION_FLRC
+    radio->startBurstReceive();
+#endif
+
     while (true)
     {
         uint32_t now = (uint32_t)millis();
-        LR2021Error result = radio->receive(pkt_buf, PAYLOAD_SIZE_FSK, &pkt_status);
+#if RADIO_MODULATION == MODULATION_FLRC
+        LR2021Error result = radio->receiveBurstPacket(pkt_buf, RADIO_PACKET_SIZE, &pkt_status, RX_FRAME_TIMEOUT_MS);
+#else
+        LR2021Error result = radio->receive(pkt_buf, RADIO_PACKET_SIZE, &pkt_status);
+#endif
 
         if (result.driverCode == LR2021_ERR_CRC_MISMATCH)
         {
             s_reassembler.stat_crc_drop++;
-            if (fsk_reassembler_check_timeout(&s_reassembler, now) == FSK_INGEST_TIMEOUT)
+            if (reassembler_check_timeout(&s_reassembler, now) == INGEST_TIMEOUT)
                 goto frame_ready;
             taskYIELD();
             continue;
@@ -101,7 +117,7 @@ static void receive_thread(EAGLESystems *arg)
 
         if (result.driverCode == LR2021_ERR_RX_TIMEOUT)
         {
-            if (fsk_reassembler_check_timeout(&s_reassembler, now) == FSK_INGEST_TIMEOUT)
+            if (reassembler_check_timeout(&s_reassembler, now) == INGEST_TIMEOUT)
                 goto frame_ready;
             taskYIELD();
             continue;
@@ -118,9 +134,9 @@ static void receive_thread(EAGLESystems *arg)
         }
 
         {
-            FskIngestResult ir = fsk_reassembler_ingest(&s_reassembler, pkt_buf, now);
+            IngestResult ir = reassembler_ingest(&s_reassembler, pkt_buf, now);
 
-            if (ir == FSK_INGEST_COMPLETE || ir == FSK_INGEST_TIMEOUT)
+            if (ir == INGEST_COMPLETE || ir == INGEST_TIMEOUT)
                 goto frame_ready;
 
 #ifdef USE_USB_DEBUG
@@ -128,12 +144,12 @@ static void receive_thread(EAGLESystems *arg)
             {
                 last_status_ms = millis();
                 arg->serial->printf(
-                    "[rx] id=0x%02X frags=%u/%u rssi=%.1f lqi=%.2f | drops=%lu resets=%lu\n",
+                    "[rx] id=0x%02X frags=%u/%u rssi=%.1f " RX_QUALITY_FMT " | drops=%lu resets=%lu\n",
                     s_reassembler.frame_id,
                     s_reassembler.frags_received,
                     s_reassembler.total_frags,
                     pkt_status.rssiAvg,
-                    pkt_status.lqi,
+                    RX_QUALITY(pkt_status),
                     (unsigned long)s_reassembler.stat_crc_drop,
                     (unsigned long)s_reassembler.stat_frame_resets);
             }
@@ -143,18 +159,18 @@ static void receive_thread(EAGLESystems *arg)
         }
 
     frame_ready:
-    {
-        // completed_size is saved by ingest/check_timeout BEFORE reset clears total_size
-        uint32_t len = s_reassembler.completed_size;
-        if (len > 0 && !output_busy)
         {
-            bl_stat = !bl_stat;
-            digitalWrite(LED_BLUE, bl_stat);
-            memcpy(output_buffer, s_reassembler.data_buf, len);
-            output_len = len;
-            xSemaphoreGive(output_sem);
+            // completed_size is saved by ingest/check_timeout BEFORE reset clears total_size
+            uint32_t len = s_reassembler.completed_size;
+            if (len > 0 && !output_busy)
+            {
+                bl_stat = !bl_stat;
+                digitalWrite(LED_BLUE, bl_stat);
+                memcpy(output_buffer, s_reassembler.data_buf, len);
+                output_len = len;
+                xSemaphoreGive(output_sem);
+            }
         }
-    }
         taskYIELD();
         continue;
     }
@@ -198,7 +214,7 @@ static void receive_thread(EAGLESystems *arg)
     sys.serial->printf("[eagle] LR2021 pins: CS=%d INT=%d\n", LR2021_CS, LR2021_GPIO9);
 #endif
 
-    if (!fsk_reassembler_init(&s_reassembler, FSK_MAX_RX_FRAME_SIZE))
+    if (!reassembler_init(&s_reassembler, MAX_RX_FRAME_SIZE))
     {
         digitalWrite(LED_RED, HIGH);
         while (1)
