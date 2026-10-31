@@ -116,8 +116,8 @@ def decode_jpeg(jpeg_bytes: bytes):
         img = np.array(pil_img)
         if len(img.shape) == 3 and img.shape[2] == 3:
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        # re_combined_img = re_combine(img)
-        return img, None
+        re_combined_img = re_combine(img)
+        return img, re_combined_img
     except Exception as e:
         print(f"  Pillow decode failed: {e}")
 
