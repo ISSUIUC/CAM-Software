@@ -30,7 +30,7 @@ static const int IRQ_PIN = 9;
 #define FREQ_FLRC FREQ_LUNA_II_LAUNCH // MHz
 
 #define BITRATE_FLRC 1300                   // kbps (kilo-BITS per second) raw. DS Rev 2.2 Table 3-8
-#define CR_FLRC RADIOLIB_LR2021_FLRC_CR_3_4 // 1300 * 3/4 = 975 kbps effective (DS Table 18-2)
+#define CR_FLRC RADIOLIB_LR2021_FLRC_CR_1_2 // 1300 * 1/2 = 650 kbps effective (DS Table 18-2)
 #define SHAPING_FLRC RADIOLIB_SHAPING_0_5   // Table 18.1.3: FLRC allows BT 0.5, 1.0 or off. Sensitivity specs use 0.5
 #define CRC_LENGTH_FLRC 3                   // bytes: 0, 2, 3 or 4 (RadioLib setCRC)
 #define RX_BOOST_FLRC 7                     // SetRxPath rx_boost 0..7. 7 = +1 dB LF sensitivity for +1.2 mA (DS Tables 3-6, 3-8)
