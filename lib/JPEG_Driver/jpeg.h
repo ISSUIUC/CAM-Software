@@ -19,8 +19,8 @@ private:
     };
 
     jpeg_encode_cfg_t enc_config = {
-        .height = 240,
-        .width = 360,
+        .height = 120,
+        .width = 180,
         .src_type = JPEG_ENCODE_IN_FORMAT_YUV422,
         .sub_sample = JPEG_DOWN_SAMPLING_YUV422, // this works for some reason
         .image_quality = 40,
@@ -35,7 +35,8 @@ private:
     };
 
     int jpg_output_size = 360 * 240 * 2 / 5; // eddie - we can just divde this by 5 since a compression ratio of 10 to 1 is good // "in theory we could set this to some valid fraction of the original size, but rn idc" - Michael
-    int merged_size = 360 * 240 * 2;
+    int merged_size = 360 * 240 * 2; // merged_buf still holds the 360 x 240 image before it is downscaled
+    int scaled_size = 180 * 120 * 2; // what actually gets encoded
 
     jpeg_encoder_handle_t encoder_engine;
 

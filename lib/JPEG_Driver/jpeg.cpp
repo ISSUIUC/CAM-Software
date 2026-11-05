@@ -244,6 +244,30 @@ void jpeg_encoder::merge_fields(bool a_odd, esp_video_buffer_element *elem_a, es
             memcpy(dst + j * 4, src + j * 8, 4); // yuyv encodes 1 pixel every 2 bytes, 4 bytes every 2 pixels
         }
     }
+
+    // averages every 2x2 block of pixels
+    const int half_row = 180 * 2;
+    for (int i = 0; i < 120; i++)
+    {
+        const uint8_t *top = merged_buf + (2 * i) * dst_row;
+        const uint8_t *bot = top + dst_row;
+        uint8_t *dst = merged_buf + i * half_row;
+        for (int j = 0; j < 90; j++) // 90 macro pixels = 180 pixels, each made from 2 source macro pixels
+        {
+            // source is U Y0 V Y1 | U Y0 V Y1 (y on the odd bytes), so each output Y averages a 2x2 block
+            // of Y and each output U/V averages the 2 chroma samples on each of the 2 rows
+            const uint8_t *a = top + j * 8;                   // 8 bytes per 2 macro pixels
+            const uint8_t *b = bot + j * 8;                   // 8 bytes per 2 macro pixels
+            uint8_t u = (a[0] + a[4] + b[0] + b[4] + 2) >> 2; //+2 so avg rounds up, >> divide by 2 to get average
+            uint8_t y0 = (a[1] + a[3] + b[1] + b[3] + 2) >> 2;
+            uint8_t v = (a[2] + a[6] + b[2] + b[6] + 2) >> 2;
+            uint8_t y1 = (a[5] + a[7] + b[5] + b[7] + 2) >> 2;
+            dst[j * 4 + 0] = u;
+            dst[j * 4 + 1] = y0;
+            dst[j * 4 + 2] = v;
+            dst[j * 4 + 3] = y1;
+        }
+    }
 }
 
 void jpeg_encoder::clean_cache_and_memory()
@@ -255,6 +279,6 @@ void jpeg_encoder::clean_cache_and_memory()
 
 esp_err_t jpeg_encoder::encode()
 {
-    esp_err_t err = jpeg_encoder_process(encoder_engine, &enc_config, merged_buf, merged_size, jpg_encoder_output_buf, jpg_output_size, &jpg_encoded_size);
+    esp_err_t err = jpeg_encoder_process(encoder_engine, &enc_config, merged_buf, scaled_size, jpg_encoder_output_buf, jpg_output_size, &jpg_encoded_size);
     return err;
 }
