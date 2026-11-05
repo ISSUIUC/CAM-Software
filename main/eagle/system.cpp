@@ -99,12 +99,12 @@ static void receive_thread(EAGLESystems *arg)
 
     while (true)
     {
-        uint32_t now = (uint32_t)millis();
 #if RADIO_MODULATION == MODULATION_FLRC
         LR2021Error result = radio->receiveBurstPacket(pkt_buf, RADIO_PACKET_SIZE, &pkt_status, RX_FRAME_TIMEOUT_MS);
 #else
         LR2021Error result = radio->receive(pkt_buf, RADIO_PACKET_SIZE, &pkt_status);
 #endif
+        uint32_t now = (uint32_t)millis();
 
         if (result.driverCode == LR2021_ERR_CRC_MISMATCH)
         {
