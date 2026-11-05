@@ -21,12 +21,13 @@ static uint8_t SYNC_WORD_FSK[] = {0x01, 0x23, 0x45, 0x67,
 static const char *CALL_SIGN = "KE2CNQ";
 static const int IRQ_PIN = 9;
 
-#define FREQ_915 915.0  // mhz
-#define FREQ_434 434.0  // mhz
-#define FREQ_447 446.85 // mhz
+#define FREQ_915 915.0             // mhz
+#define FREQ_434 434.0             // mhz
+#define FREQ_447 446.85            // mhz
+#define FREQ_LUNA_II_LAUNCH 439.25 // mhz
 
-#define FREQ_FSK FREQ_447  // MHz
-#define FREQ_FLRC FREQ_434 // MHz
+#define FREQ_FSK FREQ_447             // MHz
+#define FREQ_FLRC FREQ_LUNA_II_LAUNCH // MHz
 
 #define BITRATE_FLRC 1300                   // kbps (kilo-BITS per second) raw. DS Rev 2.2 Table 3-8
 #define CR_FLRC RADIOLIB_LR2021_FLRC_CR_3_4 // 1300 * 3/4 = 975 kbps effective (DS Table 18-2)
