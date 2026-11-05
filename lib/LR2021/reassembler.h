@@ -163,6 +163,25 @@ static inline void fragment_mark(ReassemblyState *s, uint16_t idx)
         s->recv_bits[byte_idx] |= bit_mask;
 }
 
+static inline bool reassembler_try_finish(ReassemblyState *s)
+{
+    if (s->frags_received >= s->total_frags)
+        return true;
+    if (!s->rs_layout_valid)
+        return false;
+    if (s->parity_frags_received == 0)
+        return false;
+    if (s->frags_received + s->parity_frags_received < s->total_frags)
+        return false;
+
+    uint16_t missing = s->total_frags - s->frags_received;
+    uint16_t recovered = rsDecode(s->data_buf, s->total_size,
+                                  s->parity_buf,
+                                  s->recv_bits, RX_BYTE_FIELD_LENGTH,
+                                  s->rs_layout, FRAG_DATA_SIZE);
+    return recovered >= missing;
+}
+
 // This is ran every iteration of the while loop of the receive thread
 static inline IngestResult reassembler_ingest(
     ReassemblyState *s,
@@ -199,6 +218,8 @@ static inline IngestResult reassembler_ingest(
 
     if (is_parity)
     {
+        if (incoming_id != s->frame_id || total_size != s->total_size || frag_index >= s->rs_layout.totalFrags)
+            return INGEST_BAD_HDR;
         uint16_t parity_idx = frag_index - dataFrags;
         uint32_t parity_off = (uint32_t)parity_idx * FRAG_DATA_SIZE;
         if (!s->parity_buf || parity_off + FRAG_DATA_SIZE > s->parity_buf_len)
@@ -209,23 +230,22 @@ static inline IngestResult reassembler_ingest(
         fragment_mark(s, frag_index); // unified recv_bits covers data+parity indices
         s->parity_frags_received++;
         s->last_frag_ms = now_ms;
-        return INGEST_OK;
+    }
+    else
+    {
+        // this is what happens to a data fragment yipee
+        if (fragment_seen(s, frag_index))
+            return INGEST_DUP;
+        if (!reassemble_fragment(pkt, frag_index, total_size, s->data_buf, s->data_buf_len))
+            return INGEST_OVERFLOW;
+
+        fragment_mark(s, frag_index);
+        s->frags_received++;
+        s->last_frag_ms = now_ms;
+        s->stat_frags_total++;
     }
 
-    // this is what happens to a data fragment
-    // if (frag_index >= s->total_frags)
-    //     return INGEST_BAD_HDR; this is never called
-    if (fragment_seen(s, frag_index))
-        return INGEST_DUP;
-    if (!reassemble_fragment(pkt, frag_index, total_size, s->data_buf, s->data_buf_len))
-        return INGEST_OVERFLOW;
-
-    fragment_mark(s, frag_index);
-    s->frags_received++;
-    s->last_frag_ms = now_ms;
-    s->stat_frags_total++;
-
-    if (s->frags_received >= s->total_frags)
+    if (reassembler_try_finish(s))
     {
         s->last_complete_id = s->frame_id;
         s->completed_size = s->total_size;
