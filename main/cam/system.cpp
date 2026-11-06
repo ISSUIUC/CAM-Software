@@ -1,76 +1,15 @@
-#ifdef IS_CAM
+// #ifdef IS_CAM
 
 #include <cam/system.h>
 #include <errors.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_heap_caps.h"
-#include "esp_timer.h"
-#include "driver/gpio.h"
 
 #define THREAD_STACK_SIZE_DEFAULT 4096
 
 USBCDC USBSerial;
 CAMSystems sys;
-
-// DVP frame-flow counters, defined in components/esp_video/src/device/esp_video_dvp_device.c
-extern "C" volatile uint32_t g_dvp_eof_count;
-extern "C" volatile uint32_t g_dvp_starved_count;
-
-// VSYNC probe: watches the TVP's VSYNC pin independently of the DVP, so a dead capture can be told
-// apart from a dead TVP. A field longer than ~30 ms (480 lines of AVID data) does not fit in one
-// 720x480x2 DVP buffer, so long gaps are logged along with the DMA EOF count when they ended.
-#define VSYNC_LONG_GAP_US 22000
-#define VSYNC_GAP_LOG_LEN 16
-
-struct vsync_gap_t
-{
-    int64_t end_us;
-    int32_t gap_us;
-    uint32_t eof_count;
-};
-
-static volatile uint32_t vsync_edges = 0;
-static volatile int64_t vsync_last_us = 0;
-static vsync_gap_t vsync_gap_log[VSYNC_GAP_LOG_LEN];
-static volatile uint32_t vsync_gap_count = 0;
-
-static void IRAM_ATTR vsync_isr(void *)
-{
-    int64_t now = esp_timer_get_time();
-    if (vsync_last_us != 0 && now - vsync_last_us > VSYNC_LONG_GAP_US)
-    {
-        vsync_gap_t &gap = vsync_gap_log[vsync_gap_count % VSYNC_GAP_LOG_LEN];
-        gap.end_us = now;
-        gap.gap_us = (int32_t)(now - vsync_last_us);
-        gap.eof_count = g_dvp_eof_count;
-        vsync_gap_count = vsync_gap_count + 1;
-    }
-    vsync_last_us = now;
-    vsync_edges = vsync_edges + 1;
-}
-
-static void start_vsync_probe()
-{
-    gpio_install_isr_service(0); // ESP_ERR_INVALID_STATE if already installed, which is fine
-    gpio_set_intr_type((gpio_num_t)TVP5151_VSYNC, GPIO_INTR_POSEDGE);
-    gpio_isr_handler_add((gpio_num_t)TVP5151_VSYNC, vsync_isr, nullptr);
-}
-
-static void print_new_vsync_gaps(CAMSystems *arg, uint32_t &printed)
-{
-    uint32_t count = vsync_gap_count;
-    if (count - printed > VSYNC_GAP_LOG_LEN)
-    {
-        printed = count - VSYNC_GAP_LOG_LEN;
-    }
-    for (; printed < count; printed++)
-    {
-        const vsync_gap_t &gap = vsync_gap_log[printed % VSYNC_GAP_LOG_LEN];
-        arg->serial->printf("[dvp] long VSYNC gap %.1f ms at t=%.3f s (dma eof %lu)\n",
-                            gap.gap_us / 1000.0, gap.end_us / 1e6, (unsigned long)gap.eof_count);
-    }
-}
 
 static void cmd_thread(CAMSystems *arg)
 {
@@ -216,6 +155,16 @@ static void poll_thread(CAMSystems *arg)
             }
         }
 
+        double voltage = arg->ina.read_voltage();
+        double current = arg->ina.read_current();
+        double power = arg->ina.read_power();
+        arg->serial->print("Voltage (mV): ");
+        arg->serial->println(voltage);
+        arg->serial->print("Current (mA): ");
+        arg->serial->println(current);
+        arg->serial->print("Power (uW): ");
+        arg->serial->println(power);
+
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
@@ -229,8 +178,8 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
     if (len == 0)
         return;
 
-    uint16_t n = frame_count(len);
-    // arg->serial->print("[tx] frame count output: ");
+    uint16_t n = fsk_frame_count(len);
+    // arg->serial->print("[tx] fsk frame count output: ");
     // arg->serial->println(n);
     if (n == 0)
         return;
@@ -241,25 +190,28 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
     digitalWrite(LED_GREEN, light_on_frame);
     arg->b2b.state.vmux_state = !arg->b2b.state.vmux_state;
 
-    LR2021Driver *driver = arg->radio.getDriver();
+    LR2021FSKDriver *driver = arg->radio.getDriver();
 
-    uint8_t (*pool)[RADIO_PACKET_SIZE] = (uint8_t (*)[RADIO_PACKET_SIZE])
-        heap_caps_malloc((size_t)n * RADIO_PACKET_SIZE, MALLOC_CAP_SPIRAM);
+    uint8_t (*pool)[PAYLOAD_SIZE_FSK] = (uint8_t (*)[PAYLOAD_SIZE_FSK])
+        heap_caps_malloc((size_t)n * PAYLOAD_SIZE_FSK, MALLOC_CAP_SPIRAM);
+    uint8_t **ptrs = (uint8_t **)heap_caps_malloc(n * sizeof(uint8_t *), MALLOC_CAP_SPIRAM);
 
-    if (!pool)
+    if (!pool || !ptrs)
     {
+        heap_caps_free(pool);
+        heap_caps_free(ptrs);
         arg->serial->println("[tx] OOM building frame");
         return;
     }
 
     frame_id++;
 
-    Frame frame = frame_build(frame_id, buf, len, pool, n);
+    FskFrame frame = fsk_frame_build(frame_id, buf, len, pool, ptrs, n);
 
     if (frame.valid)
     {
         arg->serial->println("[tx] Frame build successfully.");
-        LR2021Error err = frame_transmit(*driver, frame);
+        LR2021Error err = fsk_frame_transmit(*driver, frame);
 
         if (!err.ok())
         {
@@ -278,74 +230,39 @@ void on_frame_ready(uint32_t len, uint8_t *buf, CAMSystems *arg)
     // arg->serial->println("TX Done");
 
     heap_caps_free(pool);
+    heap_caps_free(ptrs);
 
     RSLayout layout;
-    layout.compute(len, FRAG_DATA_SIZE);
+    layout.compute(len, FSK_FRAG_DATA_SIZE);
     uint16_t numParity = layout.numBlocks * RS_PARITY_SHARDS;
 
     uint8_t *parity_flat = (uint8_t *)heap_caps_malloc(
-        (uint32_t)numParity * FRAG_DATA_SIZE, MALLOC_CAP_SPIRAM);
-    uint8_t (*pPool)[RADIO_PACKET_SIZE] = (uint8_t (*)[RADIO_PACKET_SIZE])
-        heap_caps_malloc((size_t)numParity * RADIO_PACKET_SIZE, MALLOC_CAP_SPIRAM);
+        (uint32_t)numParity * FSK_FRAG_DATA_SIZE, MALLOC_CAP_SPIRAM);
+    uint8_t (*pPool)[PAYLOAD_SIZE_FSK] = (uint8_t (*)[PAYLOAD_SIZE_FSK])
+        heap_caps_malloc((size_t)numParity * PAYLOAD_SIZE_FSK, MALLOC_CAP_SPIRAM);
+    uint8_t **pPtrs = (uint8_t **)heap_caps_malloc(numParity * sizeof(uint8_t *), MALLOC_CAP_SPIRAM);
 
-    if (parity_flat && pPool)
+    if (parity_flat && pPool && pPtrs)
     {
-        Frame pFrame = parity_frame_build(
-            frame_id, buf, len, layout, parity_flat, pPool);
+        FskFrame pFrame = fsk_parity_frame_build(
+            frame_id, buf, len, layout, parity_flat, pPool, pPtrs);
         if (pFrame.valid)
         {
-            LR2021Error err = frame_transmit(*driver, pFrame);
+            LR2021Error err = fsk_frame_transmit(*driver, pFrame);
             if (!err.ok())
                 arg->serial->printf("[tx] parity burst failed: %s\n", err.stageStr());
         }
     }
     heap_caps_free(parity_flat);
     heap_caps_free(pPool);
-}
-
-// The TVP free-runs at ~60 fields/s even with no camera input, so this many empty 100 ms waits
-// in a row means the DVP capture itself has stopped
-#define DVP_STALL_WAITS 3
-
-static void recover_stalled_dvp(CAMSystems *arg, uint32_t vsync_at_last_field, uint32_t eof_at_last_field)
-{
-    static uint32_t stalls = 0;
-    uint32_t eof_now = g_dvp_eof_count;
-
-    // vsync still counting + dma eof frozen = TVP is fine, the P4 capture DMA is dead.
-    // A long VSYNC gap logged with this same dma eof count is the field that overflowed it.
-    arg->serial->printf("[dvp] STALL #%lu: no field for %d ms | vsync +%lu, dma eof +%lu (frozen at %lu), starved %lu | TVP V%d H%d, %u lines\n",
-                        (unsigned long)++stalls, DVP_STALL_WAITS * 100,
-                        (unsigned long)(vsync_edges - vsync_at_last_field),
-                        (unsigned long)(eof_now - eof_at_last_field), (unsigned long)eof_now,
-                        (unsigned long)g_dvp_starved_count,
-                        arg->tvp.tvp.read_vertical_sync_lock_status(),
-                        arg->tvp.tvp.read_horizontal_sync_lock_status(),
-                        arg->tvp.tvp.read_vertical_line_count());
-
-    esp_err_t err = restart_dvp_capture(arg->video);
-    if (err != ESP_OK)
-    {
-        arg->serial->printf("[dvp] capture restart failed: %s\n", esp_err_to_name(err));
-    }
-    else
-    {
-        arg->serial->println("[dvp] capture restarted");
-    }
+    heap_caps_free(pPtrs);
 }
 
 static void video_thread(CAMSystems *arg)
 {
-    uint32_t empty_waits = 0;
-    uint32_t vsync_at_last_field = vsync_edges;
-    uint32_t eof_at_last_field = g_dvp_eof_count;
-    uint32_t vsync_gaps_printed = 0;
-
     while (true)
     {
         vTaskDelay(pdMS_TO_TICKS(10));
-
-        print_new_vsync_gaps(arg, vsync_gaps_printed);
 
         bool v_lock = arg->tvp.tvp.read_vertical_sync_lock_status();
         bool h_lock = arg->tvp.tvp.read_horizontal_sync_lock_status();
@@ -363,18 +280,8 @@ static void video_thread(CAMSystems *arg)
         esp_video_buffer_element *elem_a = esp_video_recv_element(arg->video, V4L2_BUF_TYPE_VIDEO_CAPTURE, pdMS_TO_TICKS(100));
         if (!elem_a)
         {
-            if (++empty_waits >= DVP_STALL_WAITS)
-            {
-                recover_stalled_dvp(arg, vsync_at_last_field, eof_at_last_field);
-                empty_waits = 0;
-                vsync_at_last_field = vsync_edges;
-                eof_at_last_field = g_dvp_eof_count;
-            }
             continue;
         }
-        empty_waits = 0;
-        vsync_at_last_field = vsync_edges;
-        eof_at_last_field = g_dvp_eof_count;
 
         arg->serial->println("elem a recieved");
 
@@ -468,7 +375,7 @@ static void comm_thread(CAMSystems *arg)
                 // Attempt recovery.
                 arg->b2b.reinit();
                 arg->serial->println("Sleeping for recovery test...");
-                delay(500);
+                vTaskDelay(pdMS_TO_TICKS(500));
 
                 if (millis() - LAST_I2C_COMM <= I2C_RECOVERY_STATE_THRESHOLD)
                 {
@@ -492,11 +399,11 @@ static void comm_thread(CAMSystems *arg)
             {
                 is_in_fallback_state = true;
                 // arg->buzzer.play_tune(beep_beep, BEEP_LENGTH);
-                delay(50);
+                vTaskDelay(pdMS_TO_TICKS(50));
                 digitalWrite(CAM1_ON_OFF, HIGH);
-                delay(50);
+                vTaskDelay(pdMS_TO_TICKS(50));
                 digitalWrite(CAM2_ON_OFF, HIGH);
-                delay(50);
+                vTaskDelay(pdMS_TO_TICKS(50));
                 // digitalWrite(VTX_ON_OFF, HIGH);
                 // digitalWrite(VIDEO_SELECT, LOW);
 
@@ -522,8 +429,15 @@ static void comm_thread(CAMSystems *arg)
             arg->serial->println("Entered recovery mode");
         }
         // Serial.println("bruh5");
-        delay(10);
+        vTaskDelay(pdMS_TO_TICKS(10));
         // Serial.println("bruh6");
+    }
+}
+
+static void voltage_thread(CAMSystems *arg) {
+    while (true) {
+        ... 
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -567,12 +481,11 @@ static void comm_thread(CAMSystems *arg)
 
     sys.video = DVP_init();
     start_dvp_capture(sys.video);
-    start_vsync_probe();
 
     sys.JPEG.init();
 
     // Radio begin
-    CAMRadioStatus radio_status = sys.radio.init(SPI, sys.serial);
+    CAMRadioStatus radio_status = sys.radio.init(SPI);
     if (radio_status != CAMRadioStatus::CAMRADIO_OK)
     {
         sys.serial->print("[sys_begin] Radio init fail: ");
@@ -583,6 +496,9 @@ static void comm_thread(CAMSystems *arg)
         {
         };
     }
+
+    sys.ina745b = ina745b(0x40);
+    sys.ina745b.init();
 
     xTaskCreatePinnedToCore((TaskFunction_t)cmd_thread, "cmdq", THREAD_STACK_SIZE_DEFAULT, &sys, 10, nullptr, CORE_1);
     xTaskCreatePinnedToCore((TaskFunction_t)poll_thread, "poll", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, CORE_1);
@@ -599,4 +515,4 @@ static void comm_thread(CAMSystems *arg)
     }
 }
 
-#endif
+// #endif
