@@ -219,11 +219,11 @@ static void poll_thread(CAMSystems *arg)
         double voltage = arg->ina.read_voltage();
         double current = arg->ina.read_current();
         double power = arg->ina.read_power();
-        arg->serial->print("Voltage: ");
+        arg->serial->print("Voltage (mV): ");
         arg->serial->println(voltage);
-        arg->serial->print("Current: ");
+        arg->serial->print("Current (mA): ");
         arg->serial->println(current);
-        arg->serial->print("Power: ");
+        arg->serial->print("Power (uW): ");
         arg->serial->println(power);
 
         vTaskDelay(pdMS_TO_TICKS(100));
