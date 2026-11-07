@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "startmusic.h"
 
 #include <pins.h>
 #include <SPI.h>
@@ -13,6 +14,7 @@
 #ifdef IS_EAGLE
 #include <eagle/system.h>
 #endif
+
 
 
 
@@ -34,6 +36,13 @@ void setup()
     pinMode(LED_BLUE, OUTPUT);
     pinMode(LED_GREEN, OUTPUT);
     pinMode(LED_ORANGE, OUTPUT);
+
+    pinMode(BUZZER_PIN, OUTPUT);
+
+    if (xTaskCreate(STARTUP_SONG, "STARTUP_SONG", 1024, nullptr, 1, nullptr) != pdPASS)
+    {
+        digitalWrite(LED_RED, HIGH);
+    }
 
     sys_begin();
 }
