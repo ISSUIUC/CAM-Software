@@ -445,7 +445,7 @@ static void video_thread(CAMSystems *arg)
 }
 
 #define I2C_RECOVERY_STATE_THRESHOLD 3000
-#define I2C_RECOVERY_FALLBACK_TIME 180000 // 180 seconds
+#define I2C_RECOVERY_FALLBACK_TIME 6300 * 1000 // 6300 seconds, 1.75 hours
 uint32_t LAST_I2C_COMM;
 static void comm_thread(CAMSystems *arg)
 {
