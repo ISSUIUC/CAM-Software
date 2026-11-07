@@ -1,4 +1,4 @@
-#ifdef IS_CAM
+// #ifdef IS_CAM
 
 #include <cam/system.h>
 #include <errors.h>
@@ -215,6 +215,16 @@ static void poll_thread(CAMSystems *arg)
                 arg->b2b.state.cam2_rec = false;
             }
         }
+
+        double voltage = arg->ina.read_voltage();
+        double current = arg->ina.read_current();
+        double power = arg->ina.read_power();
+        arg->serial->print("Voltage (mV): ");
+        arg->serial->println(voltage);
+        arg->serial->print("Current (mA): ");
+        arg->serial->println(current);
+        arg->serial->print("Power (uW): ");
+        arg->serial->println(power);
 
         vTaskDelay(pdMS_TO_TICKS(100));
     }
@@ -468,7 +478,7 @@ static void comm_thread(CAMSystems *arg)
                 // Attempt recovery.
                 arg->b2b.reinit();
                 arg->serial->println("Sleeping for recovery test...");
-                delay(500);
+                vTaskDelay(pdMS_TO_TICKS(500));
 
                 if (millis() - LAST_I2C_COMM <= I2C_RECOVERY_STATE_THRESHOLD)
                 {
@@ -492,11 +502,11 @@ static void comm_thread(CAMSystems *arg)
             {
                 is_in_fallback_state = true;
                 // arg->buzzer.play_tune(beep_beep, BEEP_LENGTH);
-                delay(50);
+                vTaskDelay(pdMS_TO_TICKS(50));
                 digitalWrite(CAM1_ON_OFF, HIGH);
-                delay(50);
+                vTaskDelay(pdMS_TO_TICKS(50));
                 digitalWrite(CAM2_ON_OFF, HIGH);
-                delay(50);
+                vTaskDelay(pdMS_TO_TICKS(50));
                 // digitalWrite(VTX_ON_OFF, HIGH);
                 // digitalWrite(VIDEO_SELECT, LOW);
 
@@ -522,8 +532,15 @@ static void comm_thread(CAMSystems *arg)
             arg->serial->println("Entered recovery mode");
         }
         // Serial.println("bruh5");
-        delay(10);
+        vTaskDelay(pdMS_TO_TICKS(10));
         // Serial.println("bruh6");
+    }
+}
+
+static void voltage_thread(CAMSystems *arg) {
+    while (true) {
+        ... 
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -584,6 +601,9 @@ static void comm_thread(CAMSystems *arg)
         };
     }
 
+    sys.ina745b = ina745b(0x40);
+    sys.ina745b.init();
+
     xTaskCreatePinnedToCore((TaskFunction_t)cmd_thread, "cmdq", THREAD_STACK_SIZE_DEFAULT, &sys, 10, nullptr, CORE_1);
     xTaskCreatePinnedToCore((TaskFunction_t)poll_thread, "poll", THREAD_STACK_SIZE_DEFAULT, &sys, 5, nullptr, CORE_1);
     xTaskCreatePinnedToCore((TaskFunction_t)comm_thread, "comm", THREAD_STACK_SIZE_DEFAULT, &sys, 8, nullptr, CORE_1);
@@ -599,4 +619,4 @@ static void comm_thread(CAMSystems *arg)
     }
 }
 
-#endif
+// #endif
