@@ -14,6 +14,7 @@
 #define I2C_SDA 49
 #define I2C_SCL 50
 #define TVP5151_ADDR 0x5C
+#define INA745B_ADDR 0x40
 
 #define TVP5151_PDN 25
 #define TVP5151_RESET 3

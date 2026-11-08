@@ -13,6 +13,9 @@ USBCDC USBSerial;
 static ReassemblyState s_reassembler;
 static uint8_t *output_buffer = nullptr;
 static uint32_t output_len = 0;
+static uint16_t output_frags = 0;                         // data frags of the frame in output_buffer
+static uint16_t output_missing = 0;                       // how many of them never arrived (0 = whole frame)
+static uint8_t output_missing_bits[RX_BYTE_FIELD_LENGTH]; // its recv_bits, a clear bit = missing frag
 static SemaphoreHandle_t output_sem = nullptr;
 static volatile bool output_busy = false;
 
@@ -64,7 +67,22 @@ static void output_thread(EAGLESystems *arg)
             {
 #ifdef USE_USB_DEBUG
                 output_busy = true;
-                arg->serial->printf("*FRAME %lu\n", (unsigned long)len);
+                arg->serial->printf("*FRAME %lu", (unsigned long)len);
+                if (output_missing)
+                {
+                    // Partial frame (missing frags hold stale bytes): read_jpeg_stream.py cuts and patches around them
+                    arg->serial->printf(" frag=%u missing=", (unsigned)FRAG_DATA_SIZE);
+                    const char *sep = "";
+                    for (uint16_t i = 0; i < output_frags; i++)
+                    {
+                        if (!(output_missing_bits[i / 8] & (1u << (i % 8))))
+                        {
+                            arg->serial->printf("%s%u", sep, i);
+                            sep = ",";
+                        }
+                    }
+                }
+                arg->serial->print("\n");
                 chunk_output(arg, output_buffer, len);
                 arg->serial->println("**DONE");
                 output_busy = false;
@@ -81,6 +99,25 @@ static void output_thread(EAGLESystems *arg)
 #define RX_QUALITY_FMT "rssi_sync=%.1f"
 #define RX_QUALITY(status) (status).rssiSync
 #endif
+
+// Hands the frame the reassembler just finished to the output thread (dropped if it's still sending one)
+static void emit_frame()
+{
+    // completed_* are saved by the reassembler BEFORE reset clears the frame
+    uint32_t len = s_reassembler.completed_size;
+    if (len > 0 && !output_busy)
+    {
+        bl_stat = !bl_stat;
+        digitalWrite(LED_BLUE, bl_stat);
+        memcpy(output_buffer, s_reassembler.data_buf, len);
+        output_len = len;
+        output_frags = s_reassembler.completed_frags;
+        output_missing = s_reassembler.completed_missing;
+        if (output_missing)
+            memcpy(output_missing_bits, s_reassembler.completed_bits, RX_BYTE_FIELD_LENGTH);
+        xSemaphoreGive(output_sem);
+    }
+}
 
 static void receive_thread(EAGLESystems *arg)
 {
@@ -135,6 +172,12 @@ static void receive_thread(EAGLESystems *arg)
 
         {
             IngestResult ir = reassembler_ingest(&s_reassembler, pkt_buf, now);
+            if (ir == INGEST_FLUSHED)
+            {
+                // Old frame went out partial, pkt_buf is the first frag of the next one
+                emit_frame();
+                ir = reassembler_ingest(&s_reassembler, pkt_buf, now);
+            }
 
             if (ir == INGEST_COMPLETE || ir == INGEST_TIMEOUT)
                 goto frame_ready;
@@ -159,18 +202,7 @@ static void receive_thread(EAGLESystems *arg)
         }
 
     frame_ready:
-        {
-            // completed_size is saved by ingest/check_timeout BEFORE reset clears total_size
-            uint32_t len = s_reassembler.completed_size;
-            if (len > 0 && !output_busy)
-            {
-                bl_stat = !bl_stat;
-                digitalWrite(LED_BLUE, bl_stat);
-                memcpy(output_buffer, s_reassembler.data_buf, len);
-                output_len = len;
-                xSemaphoreGive(output_sem);
-            }
-        }
+        emit_frame();
         taskYIELD();
         continue;
     }
