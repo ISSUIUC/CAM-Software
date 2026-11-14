@@ -124,6 +124,10 @@ static esp_err_t dvp_get_input_frame_type(esp_cam_sensor_output_format_t sensor_
     return ret;
 }
 
+/* CAM debug: DVP frame-flow counters, read by main/cam/system.cpp */
+volatile uint32_t g_dvp_eof_count = 0;     /* GDMA EOF interrupts (one per VSYNC while the DMA is alive) */
+volatile uint32_t g_dvp_starved_count = 0; /* EOFs where no app buffer was queued, so the field went to the backup buffer */
+
 static bool IRAM_ATTR dvp_video_on_trans_finished(esp_cam_ctlr_handle_t handle, esp_cam_ctlr_trans_t *trans, void *user_data)
 {
     struct esp_video *video = (struct esp_video *)user_data;
@@ -139,6 +143,9 @@ static bool IRAM_ATTR dvp_video_on_get_new_trans(esp_cam_ctlr_handle_t handle, e
 {
     struct esp_video_buffer_element *element;
     struct esp_video *video = (struct esp_video *)user_data;
+
+    /* Called from the EOF ISR every time the DMA is re-armed */
+    g_dvp_eof_count++;
 
 #if CONFIG_ESP_VIDEO_ENABLE_SWAP_BYTE
     struct dvp_video *dvp_video = VIDEO_PRIV_DATA(struct dvp_video *, video);
@@ -156,6 +163,7 @@ static bool IRAM_ATTR dvp_video_on_get_new_trans(esp_cam_ctlr_handle_t handle, e
     element = CAPTURE_VIDEO_GET_QUEUED_ELEMENT(video);
     if (!element)
     {
+        g_dvp_starved_count++;
         return false;
     }
 

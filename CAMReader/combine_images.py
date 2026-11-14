@@ -1,9 +1,12 @@
 import cv2
 import numpy as np
 
+EDGE_MARGIN = 20 
+
 
 def re_combine(img):
     try:
+        height, width = img.shape[:2]
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         edges = cv2.Canny(gray, 50, 150, apertureSize=3)
         x_list = []
@@ -13,15 +16,13 @@ def re_combine(img):
         if lines is not None:
             for line in lines:
                 x1, y1, x2, y2 = line[0]
-                if abs(x1 - x2) < 1:  # Tolerance for verticality
+                if abs(x1 - x2) < 1 and EDGE_MARGIN < x1 < width - EDGE_MARGIN:
                     x_list.append(x1)
                     # cv2.line(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
         x_list.sort()
         x2 = x_list[-1]
         x1 = x_list[-2]
-
-        height, width = img.shape[:2]
 
         end_col_x1 = x1
         start_col_x1 = 0

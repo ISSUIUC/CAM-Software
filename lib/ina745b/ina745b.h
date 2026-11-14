@@ -1,7 +1,9 @@
+#pragma once
 #include <Wire.h>
 #include <Arduino.h>
 
 #define CONFIG_ADDR 0x0
+#define ADC_CONFIG_ADDR 0x1
 #define VBUS_ADDR 0x5
 #define TEMP_ADDR 0x6
 #define CURRENT_ADDR 0x7
@@ -15,7 +17,7 @@ class ina745b {
 public:
     ina745b();
     ina745b(uint8_t addr);
-    void init(uint8_t addr);
+    void init();
 
     int read_raw_voltage();
     int read_raw_current();

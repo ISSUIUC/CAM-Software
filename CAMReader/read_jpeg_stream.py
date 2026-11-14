@@ -25,6 +25,7 @@ import serial
 import numpy as np
 from PIL import Image, ImageFile
 from combine_images import re_combine
+from repair_frame import FrameRepairer, parse_frame_line
 
 from flask import Flask, Response, render_template_string
 from flask_cors import CORS
@@ -131,6 +132,7 @@ def decode_jpeg(jpeg_bytes: bytes):
 
 def serial_worker(ser, frame_queue, stop_event):
     frame_count = 0
+    repairer = FrameRepairer()
 
     try:
         while not stop_event.is_set():
@@ -143,7 +145,7 @@ def serial_worker(ser, frame_queue, stop_event):
                     print("Got *FRAME with no size, skipping")
                     continue
 
-                frame_size = int(parts[1])
+                frame_size, frag_size, missing = parse_frame_line(line)
                 print(f"Got *FRAME, expecting {frame_size} bytes")
 
                 buffer = bytearray()
@@ -165,6 +167,13 @@ def serial_worker(ser, frame_queue, stop_event):
                 jpeg = bytes(buffer)
 
                 print(f"Raw first 16 bytes: {jpeg[:16].hex(' ')}")
+
+                if missing:
+                    print(f"Partial frame: missing {len(missing)} packets {missing}")
+                jpeg = repairer.process(jpeg, frag_size, missing)
+                if jpeg is None:
+                    print("Partial frame not usable, skipping")
+                    continue
 
                 if jpeg[:2] != b"\xff\xd8":
                     print(

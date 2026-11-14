@@ -83,7 +83,7 @@ esp_video* DVP_init()
     Serial.println("After esp_video_set_format");
 
     Serial.println("Before esp_video_setup_buffer");
-    esp_video_setup_buffer(video, V4L2_BUF_TYPE_VIDEO_CAPTURE, V4L2_MEMORY_MMAP, 2);
+    esp_video_setup_buffer(video, V4L2_BUF_TYPE_VIDEO_CAPTURE, V4L2_MEMORY_MMAP, DVP_BUFFER_COUNT);
     Serial.println("After esp_video_setup_buffer");
 
     Serial.println("Before esp_video_queue_element_index");
@@ -123,5 +123,28 @@ void start_dvp_capture(esp_video *video)
             ;
     }
     Serial.println("DVP capture started");
+}
+
+// The IDF DVP driver only re-arms its DMA from the GDMA EOF interrupt. If one VSYNC-to-VSYNC
+// interval carries more data than a buffer holds (e.g. the TVP re-locking after a camera power
+// or mux change), the descriptor chain runs dry, no EOF ever fires, and capture stops for good.
+// Deleting and recreating the controller (CAM + DMA reset) recovers it.
+esp_err_t restart_dvp_capture(esp_video *video)
+{
+    // ESP_ERR_INVALID_STATE means an earlier restart already stopped it but failed to start again
+    esp_err_t err = esp_video_stop_capture(video, V4L2_BUF_TYPE_VIDEO_CAPTURE);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE)
+    {
+        return err;
+    }
+
+    // stop_capture marks every buffer free, so all of them go back in the queue
+    // (one already queued by an earlier failed restart just returns ESP_ERR_INVALID_ARG)
+    for (int i = 0; i < DVP_BUFFER_COUNT; i++)
+    {
+        esp_video_queue_element_index(video, V4L2_BUF_TYPE_VIDEO_CAPTURE, i);
+    }
+
+    return esp_video_start_capture(video, V4L2_BUF_TYPE_VIDEO_CAPTURE);
 }
 

@@ -1,0 +1,302 @@
+#pragma once
+
+#include <stdint.h>
+#include <string.h>
+#include "esp_heap_caps.h"
+#include "framer.h"
+
+#define RX_FRAME_TIMEOUT_MS 150u
+
+// Maximum JPEG frame size the reassembler will accept.
+#define MAX_RX_FRAME_SIZE (2 * 720 * 240)
+
+#define RX_BYTE_FIELD_LENGTH 256u
+
+static inline bool parse_header(
+    const uint8_t *pkt,
+    uint8_t *out_frame_id,
+    uint16_t *out_frag_index,
+    uint32_t *out_total_size)
+{
+    if (!pkt)
+        return false;
+    *out_frame_id = pkt[0];
+    *out_frag_index = ((uint16_t)pkt[1] << 8) | pkt[2];
+    *out_total_size = ((uint32_t)pkt[3] << 24) | ((uint32_t)pkt[4] << 16) | ((uint32_t)pkt[5] << 8) | (uint32_t)pkt[6];
+    return true;
+}
+
+static inline bool reassemble_fragment(
+    const uint8_t *pkt,
+    uint16_t frag_index,
+    uint32_t total_size,
+    uint8_t *dst_buf,
+    uint32_t dst_buf_len)
+{
+    if (!pkt || !dst_buf)
+        return false;
+
+    uint32_t offset = (uint32_t)frag_index * FRAG_DATA_SIZE;
+    uint32_t remaining = (offset < total_size) ? (total_size - offset) : 0u;
+    uint16_t copy_len = (remaining > FRAG_DATA_SIZE)
+                            ? (uint16_t)FRAG_DATA_SIZE
+                            : (uint16_t)remaining;
+
+    if (copy_len == 0 || offset + copy_len > dst_buf_len)
+        return false;
+
+    memcpy(dst_buf + offset, pkt + FRAG_HDR_SIZE, copy_len);
+    return true;
+}
+
+struct ReassemblyState
+{
+    uint8_t frame_id;         // frame_id currently being assembled
+    uint8_t last_complete_id; // frame_id of the last frame handed off (0xFF = none)
+    bool active;              // true while assembling a frame
+
+    // Size / progress
+    uint32_t total_size;     // original payload length (from first fragment header)
+    uint16_t total_frags;    // derived: frame_count(total_size)
+    uint16_t frags_received; // unique fragments stored so far
+    uint32_t completed_size; // total_size saved before reset, read this at frame_ready as completed size buffer
+    uint16_t completed_frags;   // data frags of the handed-off frame
+    uint16_t completed_missing; // data frags it never got (0 = complete or fully RS repaired)
+    uint8_t completed_bits[RX_BYTE_FIELD_LENGTH]; // its recv_bits, only valid when completed_missing > 0
+
+    // Timing
+    uint32_t last_frag_ms; // millis() of last successfully stored fragment
+
+    // Received-fragment bitfield (one bit per fragment index)
+    uint8_t recv_bits[RX_BYTE_FIELD_LENGTH];
+
+    // Output buffer (allocated once in SPIRAM by reassembler_init)
+    uint8_t *data_buf;
+    uint32_t data_buf_len;
+
+    // Debug counters
+    uint32_t stat_crc_drop;     // packets dropped due to LR2021_ERR_CRC_MISMATCH
+    uint32_t stat_frame_resets; // times a new frame_id interrupted an in-progress frame
+    uint32_t stat_frags_total;  // total fragments successfully written across all frames
+
+    // RS parity state: allocated once in init, persists across frames
+    uint8_t *parity_buf; // SPIRAM: max_parity_frags * FRAG_DATA_SIZE
+    uint32_t parity_buf_len;
+    uint16_t parity_frags_received;
+
+    // Layout is deterministic from total_size once known
+    RSLayout rs_layout;
+    bool rs_layout_valid;
+};
+
+enum IngestResult : uint8_t
+{
+    INGEST_OK = 0,       // fragment stored, frame still in progress
+    INGEST_COMPLETE = 1, // all fragments received — frame ready in data_buf
+    INGEST_TIMEOUT = 2,  // partial frame flushed after stale timeout
+    INGEST_DUP = 3,      // duplicate fragment index, ignored
+    INGEST_OVERFLOW = 4, // fragment write would overflow data_buf
+    INGEST_BAD_HDR = 5,  // header parse failed or sanity check failed
+    INGEST_FLUSHED = 6,  // new frame_id: old frame handed off partial in data_buf, packet NOT stored, ingest it again
+};
+
+static inline bool reassembler_init(ReassemblyState *s, uint32_t buf_size)
+{
+    memset(s, 0, sizeof(*s));
+    s->last_complete_id = 0xFF;
+    s->data_buf = (uint8_t *)heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM);
+    if (!s->data_buf)
+        return false;
+    s->data_buf_len = buf_size;
+
+    // max_data_frags = ceil(buf_size (length of maximum possible data) / frag_data size (what is the size of each fragment's data?))
+    uint32_t max_data_frags = (buf_size + FRAG_DATA_SIZE - 1) / FRAG_DATA_SIZE;
+    // ceil(max_data_frags / rs_data_shards (how big a RS block is))
+    uint32_t max_blocks = (max_data_frags + RS_DATA_SHARDS - 1) / RS_DATA_SHARDS;
+    /*
+    There are parity frags = N*RS_PARITY_SHARDS for every N blocks the Reed Solomon has to process (in our case we never go over one)
+    Each parity shard is 248 bytes long, with the 7 byte header it is 255 so a "shard" itself is a standalone packet
+    Since for every RS block (with "height" = 248 bytes, and "width" = ~81 (total JPEG image size / frag_data_size))
+    there are RS_PARITY_SHARDS amount of parity shards of length, we just multiply the total number of RS blocks
+    by how many parity shard blocks we have to get the total parity fragments we transmit (usually max blocks = 1,
+    so it is equal to the amount of parity shard blocks we have )
+    */
+    uint32_t max_parity_frags = max_blocks * RS_PARITY_SHARDS;
+
+    s->parity_buf_len = max_parity_frags * FRAG_DATA_SIZE;
+    s->parity_buf = (uint8_t *)heap_caps_malloc(s->parity_buf_len, MALLOC_CAP_SPIRAM);
+    if (!s->parity_buf)
+    {
+        heap_caps_free(s->data_buf);
+        return false;
+    }
+
+    return true;
+}
+
+// Resets per-frame fields without touching the buffer or debug counters.
+static inline void reassembler_reset(ReassemblyState *s)
+{
+    s->active = false;
+    s->frame_id = 0;
+    s->total_size = 0;
+    s->total_frags = 0;
+    s->frags_received = 0;
+    s->last_frag_ms = 0;
+    s->parity_frags_received = 0;
+    s->rs_layout_valid = false;
+    memset(s->recv_bits, 0, RX_BYTE_FIELD_LENGTH);
+}
+
+// Returns true if fragment index was already received.
+static inline bool fragment_seen(const ReassemblyState *s, uint16_t idx)
+{
+    uint16_t byte_idx = idx / 8;
+    uint8_t bit_mask = 1u << (idx % 8);
+    if (byte_idx >= RX_BYTE_FIELD_LENGTH)
+        return false;
+    return (s->recv_bits[byte_idx] & bit_mask) != 0;
+}
+
+// Marks fragment index as received.
+static inline void fragment_mark(ReassemblyState *s, uint16_t idx)
+{
+    uint16_t byte_idx = idx / 8;
+    uint8_t bit_mask = 1u << (idx % 8);
+    if (byte_idx < RX_BYTE_FIELD_LENGTH)
+        s->recv_bits[byte_idx] |= bit_mask;
+}
+
+static inline bool reassembler_try_finish(ReassemblyState *s)
+{
+    if (s->frags_received >= s->total_frags)
+        return true;
+    if (!s->rs_layout_valid)
+        return false;
+    if (s->parity_frags_received == 0)
+        return false;
+    if (s->frags_received + s->parity_frags_received < s->total_frags)
+        return false;
+
+    uint16_t missing = s->total_frags - s->frags_received;
+    uint16_t recovered = rsDecode(s->data_buf, s->total_size,
+                                  s->parity_buf,
+                                  s->recv_bits, RX_BYTE_FIELD_LENGTH,
+                                  s->rs_layout, FRAG_DATA_SIZE);
+    return recovered >= missing;
+}
+
+// Hands the frame in data_buf off: completed_* describe it until the next hand-off
+static inline void reassembler_hand_off(ReassemblyState *s, uint16_t missing)
+{
+    s->last_complete_id = s->frame_id;
+    s->completed_size = s->total_size;
+    s->completed_frags = s->total_frags;
+    s->completed_missing = missing;
+    if (missing)
+        memcpy(s->completed_bits, s->recv_bits, RX_BYTE_FIELD_LENGTH);
+    reassembler_reset(s);
+}
+
+// This is ran every iteration of the while loop of the receive thread
+static inline IngestResult reassembler_ingest(
+    ReassemblyState *s,
+    const uint8_t *pkt,
+    uint32_t now_ms)
+{
+    uint8_t incoming_id;
+    uint16_t frag_index;
+    uint32_t total_size;
+    if (!parse_header(pkt, &incoming_id, &frag_index, &total_size))
+        return INGEST_BAD_HDR;
+    if (total_size == 0 || total_size > s->data_buf_len)
+        return INGEST_BAD_HDR;
+
+    uint16_t dataFrags = frame_count(total_size);
+    bool is_parity = (frag_index >= dataFrags);
+
+    // New frame ID while the old one is unfinished: hand the old one off partial before this packet
+    // overwrites data_buf. It already got every RS attempt it could, so it can't be repaired anymore
+    if (!is_parity && s->active && incoming_id != s->frame_id && s->frags_received > 0)
+    {
+        s->stat_frame_resets++;
+        reassembler_hand_off(s, s->total_frags - s->frags_received);
+        return INGEST_FLUSHED;
+    }
+
+    // New frame ID (hermmm) start fresh (data frags only trigger this)
+    if (!is_parity && (!s->active || incoming_id != s->frame_id))
+    {
+        if (s->active)
+            s->stat_frame_resets++;
+        reassembler_reset(s);
+        s->active = true;
+        s->frame_id = incoming_id;
+        s->total_size = total_size;
+        s->total_frags = dataFrags;
+        s->rs_layout.compute(total_size, FRAG_DATA_SIZE);
+        s->rs_layout_valid = true;
+    }
+
+    if (!s->active)
+        return INGEST_BAD_HDR; // Only condition that would fail above is when it IS a parity packet. Sometimes, though, the assembler might not be active (for some odd reason, edge case), But we don't want that.
+
+    if (is_parity)
+    {
+        if (incoming_id != s->frame_id || total_size != s->total_size || frag_index >= s->rs_layout.totalFrags)
+            return INGEST_BAD_HDR;
+        uint16_t parity_idx = frag_index - dataFrags;
+        uint32_t parity_off = (uint32_t)parity_idx * FRAG_DATA_SIZE;
+        if (!s->parity_buf || parity_off + FRAG_DATA_SIZE > s->parity_buf_len)
+            return INGEST_OVERFLOW;
+        if (fragment_seen(s, frag_index))
+            return INGEST_DUP;
+        memcpy(s->parity_buf + parity_off, pkt + FRAG_HDR_SIZE, FRAG_DATA_SIZE);
+        fragment_mark(s, frag_index); // unified recv_bits covers data+parity indices
+        s->parity_frags_received++;
+        s->last_frag_ms = now_ms;
+    }
+    else
+    {
+        // this is what happens to a data fragment yipee
+        if (fragment_seen(s, frag_index))
+            return INGEST_DUP;
+        if (!reassemble_fragment(pkt, frag_index, total_size, s->data_buf, s->data_buf_len))
+            return INGEST_OVERFLOW;
+
+        fragment_mark(s, frag_index);
+        s->frags_received++;
+        s->last_frag_ms = now_ms;
+        s->stat_frags_total++;
+    }
+
+    if (reassembler_try_finish(s))
+    {
+        reassembler_hand_off(s, 0);
+        return INGEST_COMPLETE;
+    }
+    return INGEST_OK;
+}
+static inline IngestResult reassembler_check_timeout(
+    ReassemblyState *s,
+    uint32_t now_ms)
+{
+    if (!s->active || s->frags_received == 0)
+        return INGEST_OK;
+
+    if (now_ms - s->last_frag_ms >= RX_FRAME_TIMEOUT_MS)
+    {
+        uint16_t missing = s->total_frags - s->frags_received;
+        if (s->rs_layout_valid &&
+            s->parity_frags_received > 0 &&
+            rsDecode(s->data_buf, s->total_size,
+                     s->parity_buf,
+                     s->recv_bits, RX_BYTE_FIELD_LENGTH,
+                     s->rs_layout, FRAG_DATA_SIZE) >= missing)
+            missing = 0;
+
+        reassembler_hand_off(s, missing);
+        return INGEST_TIMEOUT;
+    }
+    return INGEST_OK;
+}

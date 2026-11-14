@@ -34,5 +34,5 @@ struct CAMSystems
     esp_video *video;
     jpeg_encoder JPEG;
     CAMRadio radio;
-    ina745b ina; // INA745B senses current and voltage for the camera power supply.
+    ina745b ina{INA745B_ADDR}; // INA745B senses current and voltage for the camera power supply.
 };
