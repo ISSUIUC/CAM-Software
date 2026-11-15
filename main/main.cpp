@@ -7,6 +7,8 @@
 #include <SPI.h>
 #include <Wire.h>
 
+#include "buzzer.cpp"
+
 #ifdef IS_CAM
 #include <cam/system.h>
 #endif
